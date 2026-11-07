@@ -1,0 +1,875 @@
+{
+  "schema": "ebx-screen/1.0",
+  "generator": {
+    "tool": "EasyBuilder X UIA bridge",
+    "version": "0.1.0",
+    "author": "hoverwu",
+    "exported_at": "2026-11-07T18:11:43+08:00"
+  },
+  "source_project": "PipeHeating_HMI.ebxprj",
+  "target": {
+    "software": "EasyBuilder X V1.01.376s",
+    "model": "cMT3075XH",
+    "width": 1024,
+    "height": 600,
+    "zoom": 100
+  },
+  "device": {
+    "name": "PLC_NX502",
+    "driver": "Omron EtherNet/IP (NJ/NX Series)",
+    "ip": "192.168.250.1",
+    "addressing": "CIP 变量名（GlobalVariables）"
+  },
+  "screen": {
+    "name": "报警与趋势",
+    "comment": "",
+    "width": 1024,
+    "height": 600,
+    "background": "default",
+    "element_count": 40,
+    "elements": [
+      {
+        "id": "e01",
+        "type": "static_text",
+        "ebx_kind": "文本",
+        "name": "标题",
+        "x": 150,
+        "y": 24,
+        "w": 620,
+        "h": 40,
+        "text": "报警与趋势 · 保护监视"
+      },
+      {
+        "id": "e02",
+        "type": "static_text",
+        "ebx_kind": "文本",
+        "name": "标签报警总览",
+        "x": 160,
+        "y": 80,
+        "w": 100,
+        "h": 26,
+        "text": "报警总览"
+      },
+      {
+        "id": "e03",
+        "type": "static_text",
+        "ebx_kind": "文本",
+        "name": "标签跳闸锁存",
+        "x": 270,
+        "y": 80,
+        "w": 100,
+        "h": 26,
+        "text": "跳闸锁存"
+      },
+      {
+        "id": "e04",
+        "type": "static_text",
+        "ebx_kind": "文本",
+        "name": "标签过温",
+        "x": 380,
+        "y": 80,
+        "w": 100,
+        "h": 26,
+        "text": "过温"
+      },
+      {
+        "id": "e05",
+        "type": "static_text",
+        "ebx_kind": "文本",
+        "name": "标签过温输入",
+        "x": 490,
+        "y": 80,
+        "w": 100,
+        "h": 26,
+        "text": "过温输入"
+      },
+      {
+        "id": "e06",
+        "type": "static_text",
+        "ebx_kind": "文本",
+        "name": "标签流量异常",
+        "x": 600,
+        "y": 80,
+        "w": 100,
+        "h": 26,
+        "text": "流量异常"
+      },
+      {
+        "id": "e07",
+        "type": "static_text",
+        "ebx_kind": "文本",
+        "name": "标签加热允许",
+        "x": 710,
+        "y": 80,
+        "w": 100,
+        "h": 26,
+        "text": "加热允许"
+      },
+      {
+        "id": "e08",
+        "type": "indicator",
+        "ebx_kind": "指示灯",
+        "name": "灯报警总览",
+        "x": 180,
+        "y": 110,
+        "w": 60,
+        "h": 60,
+        "tag": "doAlarm",
+        "readonly": false
+      },
+      {
+        "id": "e09",
+        "type": "indicator",
+        "ebx_kind": "指示灯",
+        "name": "灯跳闸锁存",
+        "x": 290,
+        "y": 110,
+        "w": 60,
+        "h": 60,
+        "tag": "xTripLatched",
+        "readonly": false
+      },
+      {
+        "id": "e10",
+        "type": "indicator",
+        "ebx_kind": "指示灯",
+        "name": "灯过温",
+        "x": 400,
+        "y": 110,
+        "w": 60,
+        "h": 60,
+        "tag": "xOverTemp",
+        "readonly": false
+      },
+      {
+        "id": "e11",
+        "type": "indicator",
+        "ebx_kind": "指示灯",
+        "name": "灯过温输入",
+        "x": 510,
+        "y": 110,
+        "w": 60,
+        "h": 60,
+        "tag": "diOverTemp",
+        "readonly": false
+      },
+      {
+        "id": "e12",
+        "type": "indicator",
+        "ebx_kind": "指示灯",
+        "name": "灯流量异常",
+        "x": 620,
+        "y": 110,
+        "w": 60,
+        "h": 60,
+        "tag": "xFlowBad",
+        "readonly": false
+      },
+      {
+        "id": "e13",
+        "type": "indicator",
+        "ebx_kind": "指示灯",
+        "name": "灯加热允许",
+        "x": 730,
+        "y": 110,
+        "w": 60,
+        "h": 60,
+        "tag": "xPermit",
+        "readonly": false
+      },
+      {
+        "id": "e14",
+        "type": "static_text",
+        "ebx_kind": "文本",
+        "name": "标签出口温度",
+        "x": 150,
+        "y": 210,
+        "w": 170,
+        "h": 28,
+        "text": "出口温度 (°C)"
+      },
+      {
+        "id": "e15",
+        "type": "static_text",
+        "ebx_kind": "文本",
+        "name": "标签入口温度",
+        "x": 330,
+        "y": 210,
+        "w": 170,
+        "h": 28,
+        "text": "入口温度 (°C)"
+      },
+      {
+        "id": "e16",
+        "type": "static_text",
+        "ebx_kind": "文本",
+        "name": "标签流量",
+        "x": 510,
+        "y": 210,
+        "w": 170,
+        "h": 28,
+        "text": "流量 (L/min)"
+      },
+      {
+        "id": "e17",
+        "type": "static_text",
+        "ebx_kind": "文本",
+        "name": "标签加热功率",
+        "x": 690,
+        "y": 210,
+        "w": 170,
+        "h": 28,
+        "text": "加热功率 (%)"
+      },
+      {
+        "id": "e18",
+        "type": "numeric_display",
+        "ebx_kind": "数值",
+        "name": "出口温度",
+        "x": 150,
+        "y": 242,
+        "w": 170,
+        "h": 68,
+        "tag": "rTempMeas",
+        "readonly": false
+      },
+      {
+        "id": "e19",
+        "type": "numeric_display",
+        "ebx_kind": "数值",
+        "name": "入口温度",
+        "x": 330,
+        "y": 242,
+        "w": 170,
+        "h": 68,
+        "tag": "rTempIn",
+        "readonly": false
+      },
+      {
+        "id": "e20",
+        "type": "numeric_display",
+        "ebx_kind": "数值",
+        "name": "流量",
+        "x": 510,
+        "y": 242,
+        "w": 170,
+        "h": 68,
+        "tag": "rFlow",
+        "readonly": false
+      },
+      {
+        "id": "e21",
+        "type": "numeric_display",
+        "ebx_kind": "数值",
+        "name": "加热功率",
+        "x": 690,
+        "y": 242,
+        "w": 170,
+        "h": 68,
+        "tag": "rPowerCmd",
+        "readonly": false
+      },
+      {
+        "id": "e22",
+        "type": "static_text",
+        "ebx_kind": "文本",
+        "name": "标签温度原始值",
+        "x": 150,
+        "y": 330,
+        "w": 170,
+        "h": 28,
+        "text": "温度原始值"
+      },
+      {
+        "id": "e23",
+        "type": "static_text",
+        "ebx_kind": "文本",
+        "name": "标签流量原始值",
+        "x": 330,
+        "y": 330,
+        "w": 170,
+        "h": 28,
+        "text": "流量原始值"
+      },
+      {
+        "id": "e24",
+        "type": "static_text",
+        "ebx_kind": "文本",
+        "name": "标签入口原始值",
+        "x": 510,
+        "y": 330,
+        "w": 170,
+        "h": 28,
+        "text": "入口原始值"
+      },
+      {
+        "id": "e25",
+        "type": "static_text",
+        "ebx_kind": "文本",
+        "name": "标签功率原始值",
+        "x": 690,
+        "y": 330,
+        "w": 170,
+        "h": 28,
+        "text": "功率原始值"
+      },
+      {
+        "id": "e26",
+        "type": "numeric_display",
+        "ebx_kind": "数值",
+        "name": "温度原始值",
+        "x": 150,
+        "y": 362,
+        "w": 170,
+        "h": 60,
+        "tag": "aiTempMeasRaw",
+        "readonly": false
+      },
+      {
+        "id": "e27",
+        "type": "numeric_display",
+        "ebx_kind": "数值",
+        "name": "流量原始值",
+        "x": 330,
+        "y": 362,
+        "w": 170,
+        "h": 60,
+        "tag": "aiFlowRaw",
+        "readonly": false
+      },
+      {
+        "id": "e28",
+        "type": "numeric_display",
+        "ebx_kind": "数值",
+        "name": "入口原始值",
+        "x": 510,
+        "y": 362,
+        "w": 170,
+        "h": 60,
+        "tag": "aiTempInRaw",
+        "readonly": false
+      },
+      {
+        "id": "e29",
+        "type": "numeric_display",
+        "ebx_kind": "数值",
+        "name": "功率原始值",
+        "x": 690,
+        "y": 362,
+        "w": 170,
+        "h": 60,
+        "tag": "aoPowerRaw",
+        "readonly": false
+      },
+      {
+        "id": "e30",
+        "type": "static_text",
+        "ebx_kind": "文本",
+        "name": "提示跳闸",
+        "x": 150,
+        "y": 440,
+        "w": 700,
+        "h": 32,
+        "text": "超过温度跳闸值 → xTripLatched 置位并切断加热输出。"
+      },
+      {
+        "id": "e31",
+        "type": "static_text",
+        "ebx_kind": "文本",
+        "name": "标签就绪",
+        "x": 160,
+        "y": 486,
+        "w": 100,
+        "h": 26,
+        "text": "就绪"
+      },
+      {
+        "id": "e32",
+        "type": "static_text",
+        "ebx_kind": "文本",
+        "name": "标签流量正常",
+        "x": 270,
+        "y": 486,
+        "w": 100,
+        "h": 26,
+        "text": "流量正常"
+      },
+      {
+        "id": "e33",
+        "type": "static_text",
+        "ebx_kind": "文本",
+        "name": "标签加热使能",
+        "x": 380,
+        "y": 486,
+        "w": 100,
+        "h": 26,
+        "text": "加热使能"
+      },
+      {
+        "id": "e34",
+        "type": "indicator",
+        "ebx_kind": "指示灯",
+        "name": "灯就绪",
+        "x": 180,
+        "y": 514,
+        "w": 60,
+        "h": 60,
+        "tag": "diHeaterReady",
+        "readonly": false
+      },
+      {
+        "id": "e35",
+        "type": "indicator",
+        "ebx_kind": "指示灯",
+        "name": "灯流量正常",
+        "x": 290,
+        "y": 514,
+        "w": 60,
+        "h": 60,
+        "tag": "diFlowOk",
+        "readonly": false
+      },
+      {
+        "id": "e36",
+        "type": "indicator",
+        "ebx_kind": "指示灯",
+        "name": "灯加热使能",
+        "x": 400,
+        "y": 514,
+        "w": 60,
+        "h": 60,
+        "tag": "doHeaterEnable",
+        "readonly": false
+      },
+      {
+        "id": "e37",
+        "type": "static_text",
+        "ebx_kind": "文本",
+        "name": "提示输入输出",
+        "x": 500,
+        "y": 486,
+        "w": 390,
+        "h": 60,
+        "text": "di* 为现场输入信号，do* 为 PLC 输出信号。"
+      },
+      {
+        "id": "n01",
+        "type": "button",
+        "ebx_kind": "按钮",
+        "name": "nav_主监控",
+        "x": 520,
+        "y": 548,
+        "w": 140,
+        "h": 38,
+        "label": "主监控",
+        "task": {
+          "type": "switch_screen",
+          "target": "主监控"
+        }
+      },
+      {
+        "id": "n02",
+        "type": "button",
+        "ebx_kind": "按钮",
+        "name": "nav_参数设定",
+        "x": 672,
+        "y": 548,
+        "w": 140,
+        "h": 38,
+        "label": "参数设定",
+        "task": {
+          "type": "switch_screen",
+          "target": "参数设定"
+        }
+      },
+      {
+        "id": "n03",
+        "type": "button",
+        "ebx_kind": "按钮",
+        "name": "nav_手动维护",
+        "x": 824,
+        "y": 548,
+        "w": 140,
+        "h": 38,
+        "label": "手动维护",
+        "task": {
+          "type": "switch_screen",
+          "target": "手动维护"
+        }
+      }
+    ]
+  },
+  "tags": [
+    {
+      "name": "aiTempMeasRaw",
+      "data_type": "INT",
+      "address": "",
+      "comment": "测点温度，4~20 mA -> 5530~27648",
+      "rw": "RW",
+      "scope": "GlobalVariables",
+      "addressing": "CIP variable name"
+    },
+    {
+      "name": "aiFlowRaw",
+      "data_type": "INT",
+      "address": "",
+      "comment": "体积流量",
+      "rw": "RW",
+      "scope": "GlobalVariables",
+      "addressing": "CIP variable name"
+    },
+    {
+      "name": "aiTempInRaw",
+      "data_type": "INT",
+      "address": "",
+      "comment": "入口温度",
+      "rw": "RW",
+      "scope": "GlobalVariables",
+      "addressing": "CIP variable name"
+    },
+    {
+      "name": "aoPowerRaw",
+      "data_type": "INT",
+      "address": "",
+      "comment": "功率给定 4~20 mA -> 调功器",
+      "rw": "RW",
+      "scope": "GlobalVariables",
+      "addressing": "CIP variable name"
+    },
+    {
+      "name": "diHeaterReady",
+      "data_type": "BOOL",
+      "address": "",
+      "comment": "加热器就绪：断路器合、无故障",
+      "rw": "RW",
+      "scope": "GlobalVariables",
+      "addressing": "CIP variable name"
+    },
+    {
+      "name": "diFlowOk",
+      "data_type": "BOOL",
+      "address": "",
+      "comment": "流量开关 / 泵运行反馈",
+      "rw": "RW",
+      "scope": "GlobalVariables",
+      "addressing": "CIP variable name"
+    },
+    {
+      "name": "diEstop",
+      "data_type": "BOOL",
+      "address": "",
+      "comment": "急停，常闭；TRUE = 正常",
+      "rw": "RW",
+      "scope": "GlobalVariables",
+      "addressing": "CIP variable name"
+    },
+    {
+      "name": "diOverTemp",
+      "data_type": "BOOL",
+      "address": "",
+      "comment": "超温保护开关，常闭；TRUE = 正常",
+      "rw": "RW",
+      "scope": "GlobalVariables",
+      "addressing": "CIP variable name"
+    },
+    {
+      "name": "doHeaterEnable",
+      "data_type": "BOOL",
+      "address": "",
+      "comment": "加热主回路接触器",
+      "rw": "RW",
+      "scope": "GlobalVariables",
+      "addressing": "CIP variable name"
+    },
+    {
+      "name": "doAlarm",
+      "data_type": "BOOL",
+      "address": "",
+      "comment": "综合报警",
+      "rw": "RW",
+      "scope": "GlobalVariables",
+      "addressing": "CIP variable name"
+    },
+    {
+      "name": "rSetpointHmi",
+      "data_type": "REAL",
+      "address": "",
+      "comment": "操作员设定值 °C",
+      "rw": "RW",
+      "scope": "GlobalVariables",
+      "addressing": "CIP variable name"
+    },
+    {
+      "name": "xAutoModeHmi",
+      "data_type": "BOOL",
+      "address": "",
+      "comment": "自动/手动",
+      "rw": "RW",
+      "scope": "GlobalVariables",
+      "addressing": "CIP variable name"
+    },
+    {
+      "name": "xManualPower",
+      "data_type": "REAL",
+      "address": "",
+      "comment": "手动功率 0~100 %",
+      "rw": "RW",
+      "scope": "GlobalVariables",
+      "addressing": "CIP variable name"
+    },
+    {
+      "name": "xResetCmd",
+      "data_type": "BOOL",
+      "address": "",
+      "comment": "复位按钮",
+      "rw": "RW",
+      "scope": "GlobalVariables",
+      "addressing": "CIP variable name"
+    },
+    {
+      "name": "c_aiMin",
+      "data_type": "REAL",
+      "address": "",
+      "comment": "",
+      "rw": "RW",
+      "scope": "GlobalVariables",
+      "addressing": "CIP variable name"
+    },
+    {
+      "name": "c_aiMax",
+      "data_type": "REAL",
+      "address": "",
+      "comment": "",
+      "rw": "RW",
+      "scope": "GlobalVariables",
+      "addressing": "CIP variable name"
+    },
+    {
+      "name": "c_tMeasMin",
+      "data_type": "REAL",
+      "address": "",
+      "comment": "",
+      "rw": "RW",
+      "scope": "GlobalVariables",
+      "addressing": "CIP variable name"
+    },
+    {
+      "name": "c_tMeasMax",
+      "data_type": "REAL",
+      "address": "",
+      "comment": "",
+      "rw": "RW",
+      "scope": "GlobalVariables",
+      "addressing": "CIP variable name"
+    },
+    {
+      "name": "c_flowMin",
+      "data_type": "REAL",
+      "address": "",
+      "comment": "",
+      "rw": "RW",
+      "scope": "GlobalVariables",
+      "addressing": "CIP variable name"
+    },
+    {
+      "name": "c_flowMax",
+      "data_type": "REAL",
+      "address": "",
+      "comment": "m3/h，必须覆盖实际最大流量",
+      "rw": "RW",
+      "scope": "GlobalVariables",
+      "addressing": "CIP variable name"
+    },
+    {
+      "name": "c_tInMin",
+      "data_type": "REAL",
+      "address": "",
+      "comment": "",
+      "rw": "RW",
+      "scope": "GlobalVariables",
+      "addressing": "CIP variable name"
+    },
+    {
+      "name": "c_tInMax",
+      "data_type": "REAL",
+      "address": "",
+      "comment": "",
+      "rw": "RW",
+      "scope": "GlobalVariables",
+      "addressing": "CIP variable name"
+    },
+    {
+      "name": "c_pMax",
+      "data_type": "REAL",
+      "address": "",
+      "comment": "必须与 FB 内 c_pMax 一致，W",
+      "rw": "RW",
+      "scope": "GlobalVariables",
+      "addressing": "CIP variable name"
+    },
+    {
+      "name": "c_spMin",
+      "data_type": "REAL",
+      "address": "",
+      "comment": "",
+      "rw": "RW",
+      "scope": "GlobalVariables",
+      "addressing": "CIP variable name"
+    },
+    {
+      "name": "c_spMax",
+      "data_type": "REAL",
+      "address": "",
+      "comment": "",
+      "rw": "RW",
+      "scope": "GlobalVariables",
+      "addressing": "CIP variable name"
+    },
+    {
+      "name": "c_tTrip",
+      "data_type": "REAL",
+      "address": "",
+      "comment": "测点超温跳闸 °C",
+      "rw": "RW",
+      "scope": "GlobalVariables",
+      "addressing": "CIP variable name"
+    },
+    {
+      "name": "c_flowTrip",
+      "data_type": "REAL",
+      "address": "",
+      "comment": "低于此流量禁止加热 m3/h",
+      "rw": "RW",
+      "scope": "GlobalVariables",
+      "addressing": "CIP variable name"
+    },
+    {
+      "name": "c_tsCtrl",
+      "data_type": "REAL",
+      "address": "",
+      "comment": "控制任务周期 s，必须与任务设置一致",
+      "rw": "RW",
+      "scope": "GlobalVariables",
+      "addressing": "CIP variable name"
+    },
+    {
+      "name": "rTempMeas",
+      "data_type": "REAL",
+      "address": "",
+      "comment": "",
+      "rw": "RW",
+      "scope": "GlobalVariables",
+      "addressing": "CIP variable name"
+    },
+    {
+      "name": "rFlow",
+      "data_type": "REAL",
+      "address": "",
+      "comment": "",
+      "rw": "RW",
+      "scope": "GlobalVariables",
+      "addressing": "CIP variable name"
+    },
+    {
+      "name": "rTempIn",
+      "data_type": "REAL",
+      "address": "",
+      "comment": "",
+      "rw": "RW",
+      "scope": "GlobalVariables",
+      "addressing": "CIP variable name"
+    },
+    {
+      "name": "rSetpoint",
+      "data_type": "REAL",
+      "address": "",
+      "comment": "",
+      "rw": "RW",
+      "scope": "GlobalVariables",
+      "addressing": "CIP variable name"
+    },
+    {
+      "name": "rPowerCmd",
+      "data_type": "REAL",
+      "address": "",
+      "comment": "W",
+      "rw": "RW",
+      "scope": "GlobalVariables",
+      "addressing": "CIP variable name"
+    },
+    {
+      "name": "xPermit",
+      "data_type": "BOOL",
+      "address": "",
+      "comment": "",
+      "rw": "RW",
+      "scope": "GlobalVariables",
+      "addressing": "CIP variable name"
+    },
+    {
+      "name": "xHeaterOn",
+      "data_type": "BOOL",
+      "address": "",
+      "comment": "",
+      "rw": "RW",
+      "scope": "GlobalVariables",
+      "addressing": "CIP variable name"
+    },
+    {
+      "name": "xTripLatched",
+      "data_type": "BOOL",
+      "address": "",
+      "comment": "",
+      "rw": "RW",
+      "scope": "GlobalVariables",
+      "addressing": "CIP variable name"
+    },
+    {
+      "name": "xOverTemp",
+      "data_type": "BOOL",
+      "address": "",
+      "comment": "",
+      "rw": "RW",
+      "scope": "GlobalVariables",
+      "addressing": "CIP variable name"
+    },
+    {
+      "name": "xFlowBad",
+      "data_type": "BOOL",
+      "address": "",
+      "comment": "",
+      "rw": "RW",
+      "scope": "GlobalVariables",
+      "addressing": "CIP variable name"
+    }
+  ],
+  "used_tags": [
+    "aiFlowRaw",
+    "aiTempInRaw",
+    "aiTempMeasRaw",
+    "aoPowerRaw",
+    "diFlowOk",
+    "diHeaterReady",
+    "diOverTemp",
+    "doAlarm",
+    "doHeaterEnable",
+    "rFlow",
+    "rPowerCmd",
+    "rTempIn",
+    "rTempMeas",
+    "xFlowBad",
+    "xOverTemp",
+    "xPermit",
+    "xTripLatched"
+  ],
+  "import": {
+    "native_json_support": false,
+    "note": "EasyBuilder X V1.01.376 没有画面级 JSON 导入（画面树只有 插入/复制/粘贴）。本文件需用 ebx_screen_importer.py 通过 UIA 重建，或在源工程里复制画面后粘贴。",
+    "requirements": [
+      "Windows + EasyBuilder X V1.01.376s，已打开目标工程并最大化到 1920x1080（画布缩放 100%）",
+      "目标工程已添加设备 PLC_NX502（Omron EtherNet/IP NJ/NX），并导入同名变量标签",
+      "Python 3.8+ 与 uiautomation 2.x（pip install uiautomation）"
+    ],
+    "style_policy": "字体/颜色/对齐/数值格式均为 EBX 默认值（Noto Sans 16、黑色、居中），导入器不改这些属性，因此与源画面一致。"
+  }
+}

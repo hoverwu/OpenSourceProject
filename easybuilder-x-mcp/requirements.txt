@@ -1,0 +1,5 @@
+# EasyBuilder X MCP server dependencies
+# Tested on Windows 11 + Python 3.13 / EasyBuilder X V1.01.376s
+uiautomation==2.0.29
+fastmcp==3.4.6
+pillow>=10.0

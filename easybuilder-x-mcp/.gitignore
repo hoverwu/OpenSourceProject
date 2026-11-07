@@ -1,0 +1,18 @@
+# runtime output (screenshots, project builds, state)
+out/
+work/
+*.ebxprj
+*.ebxobj
+*.log
+
+# python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# editor / OS
+.vscode/
+.idea/
+Thumbs.db
+desktop.ini
