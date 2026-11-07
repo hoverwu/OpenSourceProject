@@ -67,7 +67,7 @@ cd /d "<本目录>"
 start-ebx-mcp.bat
 ```
 
-`start-ebx-mcp.bat` 默认用 PATH 里的 `python`；要指定解释器就先 `set PYTHON=<解释器路径>`。
+`start-ebx-mcp.bat` 的解释器优先级：`PYTHON` 环境变量 → 目录内 `.venv` / `venv` → PATH 里的 `python`。也可先 `set PYTHON=<解释器路径>` 显式指定。
 
 另开一个终端自检（只读，不会改动工程；EBX 未启动也能看到工具清单）：
 
