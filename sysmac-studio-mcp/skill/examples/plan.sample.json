@@ -1,0 +1,31 @@
+[
+  {
+    "step": 1,
+    "parent": "master",
+    "port": "",
+    "kw": "GX-JC06",
+    "pick": "GX-JC06(IN,X2,X3) Main device",
+    "name": "耦合器1",
+    "node": "1",
+    "sub_name": "耦合器1Sub",
+    "sub_node": "2"
+  },
+  {
+    "step": 2,
+    "parent": "耦合器1",
+    "port": "X2",
+    "kw": "NX-ECC203",
+    "pick": "NX-ECC203",
+    "name": "NX耦合器2",
+    "node": "3"
+  },
+  {
+    "step": 3,
+    "parent": "耦合器1",
+    "port": "X3",
+    "kw": "SV660",
+    "pick": "SV660N",
+    "name": "伺服轴1",
+    "node": "4"
+  }
+]

@@ -1,0 +1,6 @@
+# Sysmac Studio MCP bridge + Skill dependencies
+# Tested with Python 3.13 on Windows; Python 3.10+ is required.
+uiautomation-mcp==0.1.2
+uiautomation==2.0.29
+fastmcp==3.4.6
+pillow==12.2.0

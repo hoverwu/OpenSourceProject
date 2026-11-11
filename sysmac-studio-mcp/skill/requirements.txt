@@ -1,0 +1,3 @@
+# Skill scripts dependencies (subset of the package root requirements.txt)
+uiautomation==2.0.29
+pillow==12.2.0
