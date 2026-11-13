@@ -1,6 +1,6 @@
 # Sysmac Studio MCP + Skill
 
-作者 hoverwu · MCP 桥接器 0.2.0 · Skill 0.10.1 · 实测环境 Sysmac Studio V1.68 64bit / Windows 11
+作者 hoverwu · MCP 桥接器 0.2.0 · Skill 0.11.0 · 实测环境 Sysmac Studio V1.68 64bit / Windows 11
 
 非官方工具：用 Windows UI Automation 读取和操作欧姆龙 Sysmac Studio，并把批量工程操作固化成可重复执行的 Skill 脚本。MCP 部分是对第三方 `uiautomation-mcp` 的本地 HTTP 桥接；Skill 部分是面向 Agent 的操作手册与命令行脚本。
 

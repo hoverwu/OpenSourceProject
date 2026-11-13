@@ -1,8 +1,8 @@
 # sysmac-studio-control Skill
 
-作者 hoverwu ｜ 版本 0.10.1 ｜ 非官方
+作者 hoverwu ｜ 版本 0.11.0 ｜ 非官方
 
-用 Windows UI Automation 读取与操作欧姆龙 Sysmac Studio 的 Agent Skill：工程树导航、编辑器测绘、变量/轴/EtherCAT 组态、编译错误读取、真落盘保存与归档校验。主入口是 [SKILL.md](SKILL.md)，实测细节在 [references/](references/)，命令行驱动在 [scripts/](scripts/)，EtherCAT 批量插入计划示例在 [examples/](examples/)。
+用 Windows UI Automation 读取与操作欧姆龙 Sysmac Studio 的 Agent Skill：工程树导航、编辑器测绘、变量/轴/EtherCAT 组态、在已有库 FB 上按轴开关加功能并重建/换 `.slr` 库、编译错误读取、真落盘保存与归档校验。主入口是 [SKILL.md](SKILL.md)，实测细节在 [references/](references/)，命令行驱动在 [scripts/](scripts/)，EtherCAT 批量插入计划示例在 [examples/](examples/)。
 
 ## 目录
 
