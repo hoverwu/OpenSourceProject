@@ -215,13 +215,13 @@ MenuItemControl name='文件(F)' id='文件(_F)' cls='MenuItem' enabled=True rec
 
 ## 26. 编译错误列表：几何定位 + 滚动 + UTF-8
 
-- 网格是 `DataGridControl`，**没有可用的 Name/AutomationId**；用 `BoundingRectangle.top > 630` 才能把它从界面里挑出来（125% DPI 实测）。
+- 网格是 `DataGridControl`，**没有可用的 Name/AutomationId**；旧版用 `BoundingRectangle.top > 630` 挑它，这只是本机基线（125% DPI 实测），窗口挪位/换缩放就失效。现优先在 `AutomationId='buildWindowsViewWindow'` 面板子树里找，找不到再退回相对主窗口下半部的几何（§81）。
 - 行内容 = 每行子 `TextControl` 顺序拼接：`编号 | 说明 | 程序 | 位置`。`说明` 里可能含换行，落盘时一行一条会"行数 ≠ 条数"，用 `编号` 去重/排序。
 - 全量读取靠 `ScrollPattern.SetScrollPercent(-1, 0..100 step 5)`，每屏 `sleep 0.35`；**滚动太快会漏行**（实测 385 条漏 4 条）。
-- 面板顶部 `TextControl` 直接给 `N 错误` 与 `M 警告`，用它做"编译结束"的判据比读进度条稳（连续两次轮询相同即结束）。
+- 面板顶部两个按钮（`显示或隐藏错误/警告`）的子 `Text` 直接给数字 `N` / `M`。**但"连续两次轮询相同 = 编译结束"不可靠**：刚点完读到的可能是上一轮陈旧计数，还必须有本轮真的编译过的证据（§81）。
 - 结果**必须写 UTF-8 文件**再看（控制台 GBK，见 §18）。
 
-现成脚本：`scripts/ss_build.py totals|list|run <pid> [out.txt]`。
+现成脚本：`scripts/ss_build.py totals|list|run <pid> [out.txt]`（锚定与结束判据见 §81）。
 
 ## 27. 目标是提权进程时，中权限的注入**静默无效**
 
@@ -780,7 +780,7 @@ Sysmac 的工程树右键菜单是 WinForms 弹层（稳定句柄，类 `Windows
 
 ## 66. 保存这一刀：`Ctrl+S` 会被残留弹层吃掉，菜单项名字带访问键后缀（2026-11-07 实测）
 
-1. **判"保存成功"只看一件事：目标 `.smc2` 的 sha256 变了没有**。标题栏不加 `*`、状态栏不提示、界面全读完也对，`ss_save.py` 的 `#### SAVED (+1s)` 才是结论。
+1. **判"保存成功"看文件不看界面：目标 `.smc2` 的 sha256 变了没有，且归档仍有效**（0.4.0 起两条都要；文件消失/损坏判 `MISSING`/`INVALID`，不算成功，§81）。标题栏不加 `*`、状态栏不提示、界面全读完也对，`ss_save.py` 的 `#### SAVED (+1s)` 才是结论。
 2. 表格里**没关掉的下拉**是一个独立顶层小窗（`HwndWrapper[SysmacStudio.exe;;<guid>]`，实测 93×31，`GWLP_EXSTYLE` 可见但 `Name`/`Title` 全空）。它会在主窗口拿到前台之后继续吃键盘：`force_foreground(主窗口)` + 真 `Ctrl+S` 按下去，文件纹丝不动（`save_final.txt`/`save_final2.txt` 两轮都是这个形状，四个轮询点都能看见这个小窗）。
    - 对策一：保存前 `U.esc(2)`（`ss_save.py --esc 2`，默认就带）；实测 Esc 能把这种弹层关掉，关不掉时它会一直在轮询里出现——**弹层还在 = 别指望键盘**。
    - 对策二（更稳）：**走菜单，不碰键盘**：`ss_save.py --menu` → `文件(F)` 用 `ExpandCollapse.Expand()` 打开，在弹层里按名字找 `保存`，`Click(simulateMove=False)` 点它。这条路实测 +1s 落盘。
@@ -890,7 +890,7 @@ Sysmac 的工程树右键菜单是 WinForms 弹层（稳定句柄，类 `Windows
 ## 75. 读树文字只能用 `TVM_GETITEMW`＋目标进程内缓冲；`TVM_GETITEM`(0x110C) 或本地缓冲会打崩（2026-11-12 实测）
 
 1. `TVM_GETITEM`(0x110C) / `TVM_GETITEMW` 若把 `TVITEMW.pszText` 指向**调用进程**的本地缓冲，
-   目标进程会往一个对它无效的指针写 → **SysmacStudio.exe 直接消失**（本轮 pid 18860 就是这么死的）。
+   目标进程会往一个对它无效的指针写 → **SysmacStudio.exe 直接消失**（本轮一个实例就是这么死的）。
    跨进程 `WM_USER+` 消息不做封送，缓冲必须 `VirtualAllocEx` 到目标进程（同 §33 的指针契约）。
 2. 安全读法已封装在 `ss_uimap.py`：`treelabels` / `node_text` 用 `TVM_GETITEMW`(0x113E)＋目标进程内
    `TVITEMW`+缓冲；`row_rect` 用 `TVM_GETITEMRECT`＋远端 `RECT`（`f=0` 标签 / `1` 整行 / `2` glyph）。
@@ -967,3 +967,16 @@ Sysmac 的工程树右键菜单是 WinForms 弹层（稳定句柄，类 `Windows
    之后从那个实例**保存**会把磁盘补丁覆盖回去；从它**创建库**会产出旧接口的 `.slr`，把已对齐的交付库再次打回原形。
    ⇒ 离线改完磁盘后，要么让开着的实例**从磁盘重开**，要么**不保存地关闭**它，保证磁盘是唯一事实源。
 3. 判"哪个实例开着哪个工程"看主窗口标题（`ss.py wins` / `state`）；多实例时别按 pid 猜，先读标题里的工程名。
+
+## 81. 验证不可靠的四类根因：绝对几何 / 键名 / 陈旧计数 / sha 占位（0.12.0 修复，纯逻辑有单测）
+
+都是"脚本报了成功/失败，但证据根本不支持结论"的可复现 bug，0.12.0 一并收紧：
+
+1. **绝对 Y 常量**：旧 `ss_build.py totals` 硬编码 `Y=620..690` 找头部计数——那是本机窗口位置/缩放下的实测基线，窗口挪位、换 DPI、换分辨率就读不到。现按 `AutomationId='buildWindowsViewWindow'` 锚定编译面板、读面板内 `显示或隐藏错误/警告` 按钮的子 Text；找不到面板 id 才退回**相对主窗口下半部**的几何兜底（窗口矩形现读，control-tree §9）。
+2. **`{PgDn}` 不是 uiautomation 键名**：`SendKeys('{PgDn}')` 抛 `TypeError: ord() expected a character, but string length 4`——未知 `{name}` 被按字面字符发送，多字符串就炸在 `ord()`。正确键名是 `{PAGEDOWN}` / `{PAGEUP}`（源码 `SpecialKeyNames` 可查）。旧 `list` 的键盘兜底因此从未生效；凡用 `{…}` 键名先对照该表，别凭印象写。
+3. **陈旧计数**：编译面板的错误/警告数字在本轮编译开始前**保留上一轮结果**。旧 `run` 以"连续两次读到相同"判结束 ⇒ 上一轮 0 错时，刚点完编译就轮询会读到陈旧 0 并报成功，哪怕本轮根本没编起来。现判据缺一不可：两个计数都读到 + 连续两次稳定且进度条不忙 + **有本轮编译证据**（轮询中见过忙 / 计数变化 / 网格内容变化）;任一不满足判 **INCONCLUSIVE** 返回非 0（忙闲看 ProgressBar，**不用 CPU 增长单独判 PASS**）。结果完全相同的无操作重编译会被判 INCONCLUSIVE（无法判定，非 0）——这是有意的保守：没有观测到编译启动/结束就没有证据，宁可不定论。
+4. **sha 占位 `'-'`**：旧 `ss_save.py` 读 sha 失败返回 `'-'`，于是"文件消失"产生一个与基线不同的假哈希，被误判成"变了=保存成功"。现读失败返回 `None`：保存前基线读不到直接退出（`UNREADABLE`）；轮询中读不到只记录、不算变化；`SAVED` 还要求目标仍是**含条目、CRC 全过的有效 zip 归档**，文件消失/损坏分别判 `MISSING` / `INVALID`（均非 0）。
+
+通用教训：**证据缺失（日志不存在、文件读不到、计数没变）不等于成功证据**。验证脚本必须区分"成功 / 失败 / 无法判定"，无法判定一律非 0；CPU 增长、文件哈希变化这类间接信号只能作旁证，不能单独当功能正确的证明（另见 offline-surgery §8.4 的"假 0 错"）。**主审独立驳回过一个工程旧 watcher：它 `busy_seen=False`、`any_change=False`，却仅凭 CPU 增量宣称"编译完成"——频繁 UIA 轮询本身就会抬 CPU，CPU 增长不能当编译生命周期证明**；这正是 `ss_build.py run` 要求"见过忙 / 计数变化 / 网格内容变化"等真实生命周期证据、否则判 INCONCLUSIVE 的原因。
+
+以上修复的纯逻辑由 `tests/` 单测覆盖（注入假 UI 对象，不需要 Sysmac）；**面板锚定、真机计数读取、保存落盘本身是 UI 行为，仍待真机回归**（extending.md 回归清单）。

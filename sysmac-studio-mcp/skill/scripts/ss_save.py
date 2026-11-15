@@ -1,18 +1,26 @@
 # -*- coding: utf-8 -*-
 """ss_save.py - 真的按 Ctrl+S 保存目标工程，并把"文件到底变了没有"作为唯一判据。
 
-作者：hoverwu ｜ 版本：0.3.0 ｜ 本版更新：开源可移植整理（去掉本机默认工程路径，--file 必填）
+作者：hoverwu ｜ 版本：0.4.0 ｜ 本版更新：保存证据语义收紧——sha 读失败返回 None（不再用 '-'），
+文件消失/损坏不会被误判成"变了=保存成功"；SAVED 必须同时满足 sha 变化 **且** 归档仍是有效 zip。
 
 为什么需要它：Skill 里其他脚本**全都不落盘**——界面写了一百个参数，`.smc2` 还是旧的，
 `ss_axcmp.py` 自然什么都比不出来。所以"写完 → 保存 → 用归档复核"这条线里，保存这一步
-必须有脚本、必须有证据（sha256 变了才算保存成功）。
+必须有脚本、必须有证据（sha256 变了 **且文件仍是有效归档** 才算保存成功）。
 
 它做的事很克制：
-1. 记下目标 `.smc2` 当前 sha256；
+1. 记下目标 `.smc2` 当前 sha256（**读不到就直接退出码 1**，没有基线就无从验证）；
 2. `force_foreground` + **真** Ctrl+S（`combo(0x11, 0x53)`，不是 UIA Invoke）；
 3. 在 +1/+3/+5/+8 s 各拍一张全图、枚举一次弹层、算一次 sha256；**文件一变就停**；
+   轮询中 sha 读不到（文件被锁/瞬时消失）只记录、**不算变化**，继续等；
 4. 任何弹层都**只记录文字不动手**——包括保存轴改动时可能冒出来的确认框；
    提到 许可/License/序列号/激活 的窗口一律不碰，只写进日志。
+
+末态判定（退出码 0 只给 SAVED，其余一律 1）：
+* `SAVED`     sha 变了，且目标仍是含条目、CRC 全过的 zip 归档；
+* `UNCHANGED` sha 没变（工程本来不脏，或键盘/菜单没落到该实例）；
+* `MISSING`   目标文件消失或不可读——**不是**保存成功；
+* `INVALID`   目标读得到但不是有效 zip 归档——**不是**保存成功。
 
   python ss_save.py <pid|auto> [out_prefix] --file <目标.smc2> [--out <目录>] [--esc N] [--menu]
 
@@ -52,10 +60,40 @@ u32.IsWindowVisible.argtypes = [wt.HWND]
 
 
 def sha(p):
+    """sha256[:16] of a readable file; None when missing/unreadable.
+
+    None (not a '-' placeholder) so a vanished file can never compare unequal
+    to a real hash and get reported as a successful save.
+    """
     try:
-        return hashlib.sha256(open(p, 'rb').read()).hexdigest()[:16]
+        with open(p, 'rb') as fh:
+            return hashlib.sha256(fh.read()).hexdigest()[:16]
     except Exception:
-        return '-'
+        return None
+
+
+def archive_ok(p):
+    """True if p is a readable zip with entries and no CRC errors."""
+    try:
+        with zipfile.ZipFile(p) as z:
+            return bool(z.namelist()) and z.testzip() is None
+    except Exception:
+        return False
+
+
+def classify_save(before, after, valid):
+    """Verdict from baseline hash, final hash and archive validity.
+
+    SAVED only when the hash changed AND the result is still a valid archive.
+    A missing/unreadable or corrupt target is never a successful save.
+    """
+    if after is None:
+        return 'MISSING'
+    if not valid:
+        return 'INVALID'
+    if before is not None and after != before:
+        return 'SAVED'
+    return 'UNCHANGED'
 
 
 def pop_lines(pid, lines, tag):
@@ -140,12 +178,19 @@ def menu_save(pid, lines):
 
 
 def changed_since(target, before, pid, lines, how):
-    """poll sha256 for ~10 s, logging popups; return (did_change, secs)."""
+    """poll sha256 for ~10 s, logging popups; return (did_change, secs).
+
+    An unreadable target (locked / momentarily gone) is logged and skipped,
+    never counted as a change.
+    """
     t0 = time.time()
     for d in (1.0, 3.0, 5.0, 8.0):
         time.sleep(d if d == 1.0 else 2.0)
         pop_lines(pid, lines, '%s +%.0fs' % (how, d))
         after = sha(target)
+        if after is None:
+            lines.append('# sha unreadable at +%.0fs (missing/locked) - not a change' % d)
+            continue
         if after != before:
             lines.append('# FILE CHANGED sha=%s at +%.0fs (%s)' % (after, d, how))
             return True, d
@@ -154,7 +199,7 @@ def changed_since(target, before, pid, lines, how):
 
 def main():
     ap = argparse.ArgumentParser(
-        description='真的按 Ctrl+S 保存目标工程，并以 sha256 是否变化为唯一判据。')
+        description='真的按 Ctrl+S 保存目标工程；SAVED = sha256 变化且归档仍有效。')
     ap.add_argument('pid', help='目标 Sysmac 进程 pid，或 auto')
     ap.add_argument('prefix', nargs='?', default='save1',
                     help='输出文件名前缀（默认 save1）')
@@ -179,6 +224,12 @@ def main():
     lines = ['# ss_save pid=%s title=%r file=%r' % (pid, mw['title'], os.path.basename(target))]
     before = sha(target)
     lines.append('# before sha=%s' % before)
+    if before is None:
+        lines.append('#### TARGET UNREADABLE - 保存前就读不到目标文件，无从验证')
+        out_txt = os.path.join(out_dir, '%s.txt' % pre)
+        U.dump(out_txt, lines[0], lines[1:])
+        print('#### UNREADABLE -> %s' % out_txt)
+        return 1
     ImageGrab.grab(all_screens=True).save(
         os.path.join(out_dir, '%s_before.png' % pre))
     # 实测：表格里**没关的下拉**是一个独立的 `HwndWrapper[...]` 顶层小窗（93×31），
@@ -205,18 +256,27 @@ def main():
         except Exception as e:
             lines.append('# 菜单兜底失败 %s: %s' % (e.__class__.__name__, str(e)[:120]))
         U.close_menu()
-    lines.append('# after sha=%s' % sha(target))
-    try:
-        z = zipfile.ZipFile(target)
-        lines.append('# archive members=%d' % len(z.namelist()))
-    except Exception as e:
-        lines.append('# archive open failed %r' % (e,))
-    lines.append('#### %s' % ('SAVED (+%.0fs)' % secs if ok
-                              else 'FILE UNCHANGED - 要么工程本来不脏，要么键盘没落到该实例'))
+    after = sha(target)
+    lines.append('# after sha=%s' % after)
+    valid = archive_ok(target) if after is not None else False
+    if after is not None:
+        try:
+            with zipfile.ZipFile(target) as z:
+                lines.append('# archive members=%d crc_ok=%s' % (len(z.namelist()), valid))
+        except Exception as e:
+            lines.append('# archive open failed %r' % (e,))
+    verdict = classify_save(before, after, valid)
+    detail = {
+        'SAVED': 'SAVED (+%.0fs)' % secs,
+        'UNCHANGED': 'FILE UNCHANGED - 要么工程本来不脏，要么键盘没落到该实例',
+        'MISSING': 'FILE MISSING - 目标消失或不可读，不是保存成功',
+        'INVALID': 'ARCHIVE INVALID - 目标不是有效 zip 归档，不是保存成功',
+    }[verdict]
+    lines.append('#### %s' % detail)
     out_txt = os.path.join(out_dir, '%s.txt' % pre)
     U.dump(out_txt, lines[0], lines[1:])
-    print('#### %s -> %s' % ('SAVED' if ok else 'UNCHANGED', out_txt))
-    return 0 if ok else 1
+    print('#### %s -> %s' % (verdict, out_txt))
+    return 0 if verdict == 'SAVED' else 1
 
 
 def _why_not_saved(secs):

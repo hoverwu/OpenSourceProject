@@ -1,6 +1,6 @@
 # sysmac-studio-control Skill
 
-作者 hoverwu ｜ 版本 0.11.0 ｜ 非官方
+作者 hoverwu ｜ 版本 0.12.1 ｜ 非官方
 
 用 Windows UI Automation 读取与操作欧姆龙 Sysmac Studio 的 Agent Skill：工程树导航、编辑器测绘、变量/轴/EtherCAT 组态、在已有库 FB 上按轴开关加功能并重建/换 `.slr` 库、编译错误读取、真落盘保存与归档校验。主入口是 [SKILL.md](SKILL.md)，实测细节在 [references/](references/)，命令行驱动在 [scripts/](scripts/)，EtherCAT 批量插入计划示例在 [examples/](examples/)。
 
@@ -8,7 +8,8 @@
 
 ```text
 SKILL.md          Agent 主入口：能力、边界、配方、安全红线
-scripts/          命令行脚本（ss.py / ss_uimap.py / ss_ecat_*.py / ss_save.py 等）
+scripts/          命令行脚本（ss.py / ss_uimap.py / ss_ecat_*.py / ss_save.py / ss_verify.py 等）
+tests/            无 Sysmac 依赖的单元测试（注入假 UI 对象，标准库 unittest）
 references/       控件树、坑清单、架构、项目文件、回归清单
 examples/         通用 EtherCAT 计划示例（plan.sample.json）
 ```
@@ -37,9 +38,20 @@ cd /d "<发布包根目录>"
 - 实测基线：Sysmac Studio V1.68 64bit / Windows 11 / 125% 缩放。换机器、换 DPI、换版本后先跑 [references/extending.md](references/extending.md) 的版本回归清单；文档里的坐标与行高是实测基线，不是跨机器常量（`SS_ROW_H`、`SS_ROWS_PER_NOTCH`、`SS_AXTABLE_*` 环境变量可覆盖）。
 - 文档中提到的 `*.txt` 实测日志与录制文件是本机运行时产物，不随 Skill 发布；需要时按对应配方重跑生成。
 
+## 单元测试（不需要 Sysmac）
+
+`tests/` 用标准库 `unittest` + 注入假 UI 对象覆盖脚本里的纯逻辑（编译计数解析、面板锚定、键盘兜底键名、陈旧计数拒绝、保存四判、离线归档校验），没装 Sysmac、没有界面也能跑：
+
+```bat
+cd /d "<本目录>"
+python -m unittest discover -s tests -p "test_*.py"
+```
+
+单测只证明逻辑对，不证明真机上找得到控件；UI 行为换环境仍按 [references/extending.md](references/extending.md) 回归。
+
 ## 安全红线
 
 - 绝不读取、输入、导出序列号、授权文件或凭据；许可（License）相关窗口只识别并避开。
 - `online` / `download` / `upload` / `reset` 等改变真实控制器状态的动作，没有用户当轮明确同意不得执行。
 - 删除、重命名、另存为、导出覆盖前先确认目标工程已落盘并备份。
-- 批量写入后必须真正保存（`ss_save.py --file <目标.smc2>`），以 sha256 或归档内容复核，不能只看界面。
+- 批量写入后必须真正保存（`ss_save.py --file <目标.smc2>`）：`SAVED` 要求 sha256 变化**且**归档仍是有效 zip，文件消失/损坏不算保存成功；不能只看界面。离线结构复核用 `ss_verify.py <目标.smc2>`（配套文件、任务关联不悬空），但它不等于"软件能打开、能编译"。

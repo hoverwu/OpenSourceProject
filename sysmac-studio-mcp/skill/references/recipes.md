@@ -160,14 +160,14 @@ ST 代码放进段里的 `IST` 内联块（梯图 JSON）。写成 `Program / St
 **[实测]**
 
 ```bash
-ss_build.py run <pid> build_all.txt     # 点 编译控制器(B) → 轮询到头 → 全量导出错误
-ss_build.py totals <pid>                # 只读面板："errors=385 warnings=0"
+ss_build.py run <pid> build_all.txt     # 点 编译控制器(B) → 轮询到稳定且有本轮编译证据 → 全量导出错误（无证据=非0）
+ss_build.py totals <pid>                # 只读面板："errors=385 warnings=0"（读不到=非0）
 ss_build.py list <pid> build_all.txt    # 只读列表
 ```
 
-- 按钮：工具栏 `ButtonControl`，`Name` 为空，靠 `HelpText` 含 `编译控制器` 匹配；
-- 结束判据：面板顶部 `N 错误` 数字**连续两次 5s 轮询不变**（比状态栏进度条稳）；
-- 列表：`DataGridControl`（`top > 630`）→ `ScrollPattern` 逐屏收 → **写 UTF-8 文件**；细节与坑见 [pitfalls.md §26](pitfalls.md#26-编译错误列表几何定位--滚动--utf-8)；
+- 按钮：工具栏 `ButtonControl`，`Name` 为空，靠 `HelpText` 含 `编译控制器` 匹配;
+- 结束判据：两个计数都读到 + 连续两次轮询稳定且进度条不忙 + **有本轮编译证据**（见过忙 / 计数变化 / 网格内容变化），任一不满足返回非 0——刚点完读到的可能是上一轮陈旧计数（[pitfalls §81](pitfalls.md)）;
+- 列表：`DataGridControl`（优先在编译面板子树里找，几何兜底相对主窗口;`top > 630` 只是本机基线）→ `ScrollPattern` 逐屏收 → **写 UTF-8 文件**;细节与坑见 [pitfalls.md §26](pitfalls.md#26-编译错误列表几何定位--滚动--utf-8);
 - 常见错误类别的判读：`地址不合法。` ⇒ 设备/轴组态缺失（重建工程的必然结果）；`该名称已用于数据类型 X。` ⇒ 结构体重名或被引用库里有同名类型；`未定义的标识符 'FC_xxx'` ⇒ 被编辑保护的 POU 没搬过来；`无法将LREAL转换为REAL` ⇒ 显式 `LREAL_TO_REAL(…)`。
 
 **"0 错误"不能只看错误网格**（2026-11-06 实测被坑）：编译没真跑起来时，网格可以是 0 行、
@@ -528,8 +528,9 @@ python ss_ecat_archive.py "<目标.smc2>" cmp "<源.smc2>"
    确认是 `Microsoft .NET Framework` 那个 ThreadException 框再 `… click` 只点 `继续(C)`；
    **永不点 `详细信息(D)`/`关闭`**（点关闭会带走整个实例）。软件活着、已写的值还在。
 7. **落盘才有真值**：上面每一步写的都只是**内存里的模型**。收尾必须
-   `python scripts/ss_save.py <pid> saveN --menu [--file <目标.smc2>]`——它记 sha256、
-   每 2 s 复算一次，**文件 sha 变了才认**（`#### SAVED (+Ns)`；`UNCHANGED` 退出码 1）。
+   `python scripts/ss_save.py <pid> saveN --menu --file <目标.smc2>`（`--file` 必填）——它记 sha256、
+   每 2 s 复算一次，**文件 sha 变了且归档仍有效才认**（`#### SAVED (+Ns)`;
+   `UNCHANGED`/`MISSING`/`INVALID` 都退出码 1，文件消失/损坏不算保存成功）。
    `--menu` 是本轮实测出来的**默认该走的路**：`文件(F)`→`保存` 用 UIA 展开+点击，
    不碰键盘，实测 +1s 落盘；裸 `Ctrl+S` 在有残留下拉弹层时**会被弹层吃掉**（弹层是独立顶层
    `HwndWrapper[...]` 小窗），脚本先 `--esc 2` 再按，仍然不变就走菜单兜底。
