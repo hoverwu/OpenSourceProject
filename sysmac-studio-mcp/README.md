@@ -1,6 +1,6 @@
 # Sysmac Studio MCP + Skill
 
-作者 hoverwu · MCP 桥接器 0.2.0 · Skill 0.11.0 · 实测环境 Sysmac Studio V1.68 64bit / Windows 11
+作者 hoverwu · MCP 桥接器 0.2.0 · Skill 0.12.1 · 实测环境 Sysmac Studio V1.68 64bit / Windows 11
 
 非官方工具：用 Windows UI Automation 读取和操作欧姆龙 Sysmac Studio，并把批量工程操作固化成可重复执行的 Skill 脚本。MCP 部分是对第三方 `uiautomation-mcp` 的本地 HTTP 桥接；Skill 部分是面向 Agent 的操作手册与命令行脚本。
 
@@ -22,6 +22,7 @@ sysmac-studio-mcp/
     SKILL.md                 Agent 主入口：能力、边界、配方、安全红线
     README.md / requirements.txt   Skill 安装说明与脚本依赖子集
     scripts/                 Sysmac Studio 命令行驱动与归档校验脚本
+    tests/                   无 Sysmac 依赖的单元测试（假 UI 对象 + 标准库 unittest）
     references/              控件树、坑清单、架构、回归清单
     examples/                EtherCAT 批量插入计划示例（通用设备名）
 ```
@@ -116,11 +117,17 @@ cd /d "<本目录>"
 - `online` / `download` / `upload` / `reset` / `drive_mode` / `program_mode` / `sync` 等会改变真实控制器状态的动作，没有用户当轮明确同意不得执行。
 - 删除、重命名、另存为、导出覆盖前先确认目标工程已保存到磁盘，并先备份。
 - 坐标、矩形和停靠布局必须现读；文档中的控件 ID 是版本相关线索，不是跨机器常量。
-- 批量写入后必须真正落盘，并以文件哈希或归档内容复核，不能只看界面。
+- 批量写入后必须真正落盘：保存成功要求文件哈希变化**且**归档仍是有效 zip（文件消失/损坏不算成功），不能只看界面；离线结构复核用 `skill/scripts/ss_verify.py`，但它不替代"软件能打开、能编译"的实测。
 
 ## 可移植性与验证
 
-换机器或升级 Sysmac Studio 后，先跑 `skill/references/extending.md` 的回归清单。发布前检查：
+换机器或升级 Sysmac Studio 后，先跑 `skill/references/extending.md` 的回归清单。不依赖 Sysmac 的纯逻辑单测（计数解析 / 保存判定 / 归档校验等，注入假 UI 对象）随时可跑：
+
+```bat
+.venv\Scripts\python -m unittest discover -s skill\tests -p "test_*.py"
+```
+
+发布前检查：
 
 ```bat
 .venv\Scripts\python tools\check_release.py

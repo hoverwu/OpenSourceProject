@@ -12,6 +12,8 @@
 
 ## 1. 版本回归清单（换机器 / 升级后跑一遍）
 
+先跑**不依赖 Sysmac 的单测**（Skill 目录下）：`python -m unittest discover -s tests -p "test_*.py"`，应全过——覆盖计数解析 / 保存判定 / 归档校验等纯逻辑；它不证明真机上找得到控件，UI 行为仍按下表回归。
+
 | # | 检查 | 期望 | 失败意味着 |
 | --- | --- | --- | --- |
 | 1 | `ss.py wins` | 列出 `SysmacStudio.exe` 窗口，标题含工程名 | 进程名变了 / 没提权 |
@@ -30,6 +32,7 @@
 
 | 14 | `ss_uimap.py open <pid> out.txt --fit --all --expand --close 1.0.2.3 1.1.1 0.3.0` | 三行都出现 `opened via enter:`，页面根类名分别是 `StructuredTextView`(ST) / `GlobalVariablesView` / `ConfigurationView`；`--expand` 后必须出现 `VariablesView` → `VariableGroupTabControl` → `DefaultGroupDataGrid`（7 列）和 `UsingExpander`；`全局变量` 那页在 `--all` 下必须露出 `GlobalNamespaceGroupDataGrid`（8 列）；三行 close 都是 `closed(click)` 且 `still open=[]` | 根类名换了 → [control-tree §16.2–§16.4](control-tree.md) 的分流判据要重写；`expand … FAILED` 或展开后仍无 `DefaultGroupDataGrid` → 变量表折叠方式变了（[§16.7](control-tree.md)）；`closed` 而不是 `closed(click)` 说明 `closeButton` 的 Invoke 现在真能调（[§58](pitfalls.md)）；不加 `--all` 就看不到内容 → 别误判"这页是空的"（[§57](pitfalls.md)） |
 | 15 | `ss_uimap.py open <pid> out.txt --fit 0.4.0 0.4.1 0.5 0.8 1.2.0 1.2.1` | **6 行全是** `enter then dblclick did not open a document`，且每行 `tree focus=True`、`row hit by click=True/True`、`rows 85->85`、`new windows=[]` | 某一页突然能开了 = 该工程在那儿有实体（轴/轴组/跟踪/任务分配），[§15](control-tree.md) 的表开始适用；取证行里 `row hit by click=False` 才是定位问题（行高变了或 `--fit` 没生效，[§53](pitfalls.md)）；`new windows=[...]` 非空说明现在会弹对话框，[§16.6](control-tree.md) 的结论要改 |
+| 15b | `ss_build.py totals <pid>`（编译面板可见，工程已编译过） | 打印 `errors=N warnings=M` 且退出码 0 | 面板 id / 计数按钮形状变了 → 按 [control-tree §9](control-tree.md) 重抓编译面板；几何兜底也读不到时**不得把"读不到"当 0 错**（[pitfalls §81](pitfalls.md)） |
 
 任何一项失败：先记录实际输出，再按 §2 重新抓结构，最后更新对应 reference。
 
@@ -40,7 +43,7 @@
 | 16 | `ss_axtable.py probe <pid> out.txt`（轴设置表页在前台、最大化） | 至少一个可见 `WindowsForms10.COMBOBOX.app.*` 子 HWND；若给了列/行还能读到 `count=34` 量级的从站列表与 `cursel` | 新版改成 WPF 网格 → UIA 能直接看见单元格，§17.1 与 `ss_axtable.py` 整条通道作废（**先按 UIA 重测，别硬套 CB_***）；一个 COMBOBOX 都没有而 `EnumChildWindows` 也空 → 是 `raise_tab`/坐标没落到格子上，跑 `geom` 重量 |
 | 17 | `ss_axpdo.py expand <pid> out.txt <轴树路径>` | 日志里**必须出现** `expand round N: <组名> pattern -> '-'`（没有 `round` 行 = 一次没点，就是 §67 的假成功）；`expand stable=` 两次一致；随后 `collect` 行数 == 源工程同轴行数 | 组行不再靠 `toggleUnit` 折叠 → §17.2 结构树要重抓（先跑 `ss_axpdo.py peek`）；`过程数据` 下拉打开后**首屏项数**远大于/远小于 ~60 → §17.3 的"先上再下 + 键入兜底"扫描参数要重调；弹层根找不到（`popup_win` 返回 None）→ 下拉宿主变了，回 §2 抓弹层 |
 | 17b | `ss_axpdo.py toggles <pid> out.txt <轴树路径>`（只读） | 三组都报出 `'+'` 或 `'-'`，且 `raw` 列表里**只有一个非 offscreen** 的符号 | 报 `('' , …)` = `toggleButton` 改名/挪层，回 `peek` 重认；`轴号 在前面的页` 与期望不符 = `raise_tab` 失效，见 §67.4 |
-| 17c | `ss_save.py <pid> saveN --menu` | `#### SAVED (+Ns)` 且日志有 `点了 文件>保存（click）` | `FILE UNCHANGED` 且轮询里一直有 `HwndWrapper[...]` 小窗 = 弹层没关，加大 `--esc`；`菜单兜底：弹层里没有 保存` = 菜单项 `Name` 形状变了，改 `bare()` 正则 |
+| 17c | `ss_save.py <pid> saveN --file <目标.smc2> --menu` | `#### SAVED (+Ns)`（sha 变化**且**归档仍有效）且日志有 `点了 文件>保存（click）` | `UNCHANGED` 且轮询里一直有 `HwndWrapper[...]` 小窗 = 弹层没关，加大 `--esc`；`菜单兜底：弹层里没有 保存` = 菜单项 `Name` 形状变了，改 `bare()` 正则；`MISSING`/`INVALID` = 目标消失/损坏，**不是**保存成功（[pitfalls §81](pitfalls.md)） |
 
 ## 2. 抓一个没见过的菜单
 
@@ -96,7 +99,8 @@ print(a != b, b != c)           # 两个 True 才算折叠/展开都生效
 | POU 变量表整张表的可读性 | **已验证**：`open … --expand` 后 `DefaultGroupDataGrid` 的行/格/空值全可读（[control-tree §16.7](control-tree.md)） | 需要覆盖"输入/输出""外部""返回值"三个未选中的页签时，得先切 `TabItem`（`SelectionItem.Select()` 未测），再重走 |
 | 梯形图/功能块图画布内元件 | 已确认不可枚举 | 只做截图 + 坐标，或在副本上离线改 `.smc2` |
 | 编译结果文本读取 | **已验证可全量读**（见 [control-tree §9](control-tree.md#9-输出--编译面板)、`scripts/ss_build.py`） | — |
-| 在线/下载/监视/仿真 | **未做，且会改真实控制器** | 需要用户明确同意 + 一台可随意折腾的 PLC |
+| 在线/下载/监视 | **未做，且会改真实控制器** | 需要用户明确同意 + 一台可随意折腾的 PLC |
+| 仿真（`模拟(S)` 菜单） | **未做**。仿真在本机跑虚拟控制器，**不等于改真实控制器**（旧文档把它与在线/下载混为一谈，已分开）;但它仍会运行程序、执行运动指令，不是"虚拟就绝对安全" | 需要用户明确同意；文档里的示例运动参数只属于其工程语境，**不具普适安全性**，未经验证不要照搬到实机或别的工程 |
 | 视图/工程/控制器/模拟/工具/窗口/帮助 菜单全量项 | 未导出 | 按 §2 逐个抓 |
 | `文件>新建`（已打开工程时） | 未验证 | 打开工程后点菜单，看是向导还是直接建 |
 | 拖拽工具箱指令到画布 | 未验证 | `flow` 的 `drag:x1,y1,x2,y2` |
@@ -112,7 +116,8 @@ print(a != b, b != c)           # 两个 True 才算折叠/展开都生效
 | `ss_axpdo.py fold` / `expand` 能否对齐 `NexAxisPDOMappingTable` | **已验证：不能**（2026-11-07）。两个方向的真点击都能把 `toggleButton` 文字切过去（`peek`/`toggles` 可复核），但保存后归档那串**一字不变**，关掉页签再保存也不变 ⇒ 它是"提交过 PDO 单元格"的历史标记，界面没有清除通道（pitfalls §65.2 已改写） | 别再拿它做验收项；要复核折叠态只看 `ss_axpdo.py toggles`（只读） |
 | `toggleUnit` 的点击通道 | `TogglePattern.Toggle()` 实测**能**切状态（`expand round N: … pattern -> '-'`），但**第一遍读值会说谎**，必须 `stable_glyphs()` 两次一致才判（pitfalls §67.2） | 换版本后先 `peek` 确认形状还是 `Button id=toggleUnit → Text id=toggleButton`；形状变了就改 `glyph()` |
 | `ss_save.py --menu` 的菜单兜底 | 实测可用（`文件(F)` 展开 + 点 `保存(S)`，+1s 落盘）；裸 `Ctrl+S` 在有残留下拉时会被弹层吃掉 | 换分辨率/语言后重跑一次 `--menu`；若 `bare()` 剥完后缀仍找不到，用 `ss_uimap.py menus` 重抓真实 `Name` |
-| `ss_build.py totals/list` 在"编译面板以页签条形式停靠在底部"时读不到表头 | 未验证（本轮 `run` 点了 `编译控制器(B)`、日志 `build finished`，但 `header not found`/`no message grid`；只能靠截图读到 `0 错误 0 警告`） | 先用工具栏 `build`（`编译窗口(B)`）把面板切到前台再跑；或按 §3.1 重抓编译面板的表头控件形状 |
+| `ss_build.py` 面板锚定 + 相对几何兜底 + 短周期 busy 采样 + 状态栏类型锚点的真机行为 | 0.12.0 起按 `buildWindowsViewWindow` id 锚定、几何兜底改相对主窗口；`run` 收紧为 busy 必须明确空闲（None 未知不当空闲，忙/未知重置稳定）、**空闲后重读新快照**连续两个有效稳定新快照才判（绝不复用缓存，防编译中陈旧 (0,0) 被当稳定结果漏读稍后发布的错误）、无证据前不累计稳定（防稍晚开始的编译被错失）、errors>0 一律非 0（warnings 单独不失败）、busy 短周期采样抓 ~2-3s 短编译、计时用 `time.monotonic` 墙钟 deadline 计入全树读成本。`is_busy` 改按**控件类型**在 `StatusBarControl` 上下文找 `ProgressBarControl`（`ss.find` 是 Name/Aid 精确匹配，无名 ProgressBar 恒 None）。纯逻辑有单测（含假时钟），**真机 UI 行为未回归**（历史问题：面板以页签条停靠时 `header not found`/`no message grid`；`POLL_S`/`RUN_TIMEOUT_S` 是启发式默认值；**状态栏/ProgressBar 类型锚点无可靠实测前 `is_busy` 可能恒 None=未知，不伪称有效检测**） | 真机各跑一次 `totals`/`list`/`run`：计数要读到、`run` 要有本轮编译证据、短编译（~2-3s）也要被判为编译过而非 INCONCLUSIVE、有错时退出码非 0、编译中陈旧 0 错不得被当稳定结果;仍读不到就按 [control-tree §9](control-tree.md) 重抓面板形状，别把读不到当 0 错（[pitfalls §81](pitfalls.md)）。**需协调工程方提供状态条/编译按钮证据**确认 `StatusBarControl`→`ProgressBarControl` 锚点与 `IsOffscreen` 忙闲语义（[control-tree §10](control-tree.md) 是历史实测，未在 `run` 回归）；可选增强：探测编译按钮 disabled→enabled 作为额外生命周期证据（**未实现/未验证**） |
+| 任务 XML 有 `AssociatedProgramData` 但任务树里没有程序实体 | **结构持久化已观察**（主审独立复核：原生保存后只读 ZIP，主任务 7 个 `AssociatedProgramData` ↔ `.oem` 任务子树 7 个 `NexAssociatedProgram`，含示例，`AssociatedProgramModel` 伴随 XML 仍在；保存前截图/树也显示示例）⇒ 承载分配关系的实体 = `NexAssociatedProgram`（+ `AssociatedProgramModel` 配套），见 [offline-surgery §8.3](offline-surgery.md)。**仅"UI 出现 + 保存后结构持久化"层级，运行时未验证** | `ss_verify.py --program <名>`（结构检查）把悬空关联判 FAIL、子树缺该实体记 INFO（**INFO 不算任务关联通过**）;剩下要证的是**重开后 / 运行时**：在副本工程重开确认分配仍在、并跑一次运行时执行，才能升级为执行验证；`NexAssociatedProgram` 是否运行时必需仍未确认 |
 | 轴设置表里 `输出设备2/3`、`通道` 各行的写入 | 未验证（本轮只实测过 `out1` 那一行是 COMBOBOX 且 `CB_GETCURSEL` 给真值） | 先 `ss_axtable.py get <pid> out.txt <列> out2` / `… out1ch` 看**能不能浮出编辑控件、是什么类名**（`probe` 会连 EDIT 一起列出来），再决定用组合框通道还是打字通道；不要假设每行都可编辑 |
 | 灰置参数（`NexAxisStartDirection`、未使用轴的型号/单位/速度）能否绕开界面 | 界面**确认无开关**（§17.4，两份工程都 `IsEnabled=False`）；是否只能离线改归档**未测** | 只读地对比源/目标 XML 里 `IsEnabled` 的取值来源（多半由 `轴使用`/`AxisType` 派生）；不要在活工程上试手改 |
 

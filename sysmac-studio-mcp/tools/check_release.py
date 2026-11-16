@@ -54,6 +54,7 @@ def main() -> int:
                 issues.append(f"absolute path: {rel.as_posix()}:{number}: {line.strip()[:120]}")
 
     py_files = list((BASE / "skill" / "scripts").glob("*.py"))
+    py_files += list((BASE / "skill" / "tests").glob("*.py"))
     py_files += [BASE / "serve_http.py", BASE / "mcp_smoke_test.py"]
     py_files += list((BASE / "tools").glob("*.py"))
     for path in py_files:

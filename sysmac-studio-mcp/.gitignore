@@ -20,3 +20,7 @@ job*.stop
 *.smc2
 *.slr
 *.zip
+
+# Local scratch / evidence (other tasks' work files, project backups): excluded
+# from release, never deleted locally. Root-anchored so only the top-level work/.
+/work/

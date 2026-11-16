@@ -276,12 +276,12 @@ Custom id='toolboxViewWindow' cls='ToolboxView'
 | 错误/警告数字 | 取那两个 `Text` 的 `Name`（实测 `'0'` / `'0'`；另一工程实测 `'385'`），**不要**靠标题栏或状态栏猜 |
 | 列表 | `DataGridControl`，`cls='ListView'` 且**没有 id/Name**，只能靠几何（在它所属容器下面、宽 >1000）定位；同类的 `id='FilterResultList'` 是筛选器结果，恒 0×0 |
 | 行 | 每行 `GetChildren()` 里是若干 `TextControl`，列序稳定：`编号／说明／程序／位置`（见 §9.1 的实测列宽） |
-| 全量读取 | 该网格支持 `ScrollPattern`（`VerticallyScrollable=True`）：`SetScrollPercent(-1, 5/10/…/100)` 逐屏收，按 `编号` 去重；不支持时退化为点网格 + `Ctrl+Home` + `PgDn` |
+| 全量读取 | 该网格支持 `ScrollPattern`（`VerticallyScrollable=True`）：`SetScrollPercent(-1, 5/10/…/100)` 逐屏收，按 `编号` 去重；不支持时退化为点网格 + `{Ctrl}{Home}` + `{PAGEDOWN}`（**uiautomation 没有 `{PgDn}` 键名**，写错抛 `ord()` TypeError，见 pitfalls §81） |
 | 落盘 | **写 UTF-8 文件再读**（控制台 GBK 会乱码，见 pitfalls §18） |
 
-现成脚本：`scripts/ss_build.py totals|list|run <pid> [out.txt]`。
+现成脚本：`scripts/ss_build.py totals|list|run <pid> [out.txt]`。定位先按 `AutomationId='buildWindowsViewWindow'` 锚定编译面板，计数读面板内那两个按钮的子 Text；找不到面板 id 时退回**相对主窗口下半部**的几何兜底（窗口矩形现读，不用绝对 Y 常量）。
 
-编译动作本身可用工具栏 `device_build`（HelpText=`编译控制器(B)`）或菜单触发，忙闲用状态栏 `ProgressBar` 判断；面板数字**连续两次轮询不变**即视为编译结束。
+编译动作本身可用工具栏 `device_build`（HelpText=`编译控制器(B)`）或菜单触发，忙闲用状态栏 `ProgressBar` 判断。**仅"面板数字连续两次轮询不变"不能算编译结束**——刚点完读到的可能是上一轮陈旧计数；`run` 还要求有本轮真的编译过的证据（见过忙 / 计数变化 / 网格内容变化），任一不满足返回非 0（pitfalls §81）。
 
 ### 9.1 实测形状（2026-11-06，中下容器 `(274,1053 1390x250)`）
 
@@ -312,7 +312,7 @@ Pane 'ToolWindowContainer-<guid>'            (274,1053 1390x250)   ← 中下这
 - **两个页签本身就是 `Pane`，`Name` 就是"输出"/"编译"**，矩形只有 43×25——它们是**页签头**，不是面板内容；`buildWindowsViewWindow` 的矩形里装着按钮和网格，所以判"编译面板可读"要读它**子元素**的矩形，不是它自己的。
 - **头部计数是两个独立 `Text`（数字 + 文字）**，数字格就是 `ss_build.py totals` 取的 `Name`；实测本例 `0 错误 / 0 警告`。
 - **列表头有 5 列，前两列没有标题**：所以"按表头文字找列"会漏掉图标列和编号列；取一行时按子 `TextControl` 顺序 = `编号、说明、程序、位置`（第 0 列是空文本）。
-- `DataGrid` 的几何判据仍然成立：`id='FilterResultList'` 是**筛选器**的结果网格（恒 0×0），编译/错误网格是**没有 id 的那个** `cls='ListView'`，只能靠 `top>1100`（或"在同一容器内且宽 >1000"）区分。
+- `DataGrid` 的几何判据仍然成立：`id='FilterResultList'` 是**筛选器**的结果网格（恒 0×0），编译/错误网格是**没有 id 的那个** `cls='ListView'`。优先在 `buildWindowsViewWindow` 面板子树里找它；退回几何时用"同一容器内且宽 >1000"+**相对主窗口**的位置判断（`top>1100` 只是本机基线，不是跨机器常量）。
 - 本例里 `1085/1108/1276` 这几行都在屏幕外（窗口底边 1351 > 1080）：**读文本没问题，真实点击不行**，需要 `--fit`。
 
 ## 10. 状态栏

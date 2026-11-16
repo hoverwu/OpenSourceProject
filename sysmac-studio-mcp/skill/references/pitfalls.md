@@ -215,13 +215,13 @@ MenuItemControl name='文件(F)' id='文件(_F)' cls='MenuItem' enabled=True rec
 
 ## 26. 编译错误列表：几何定位 + 滚动 + UTF-8
 
-- 网格是 `DataGridControl`，**没有可用的 Name/AutomationId**；用 `BoundingRectangle.top > 630` 才能把它从界面里挑出来（125% DPI 实测）。
+- 网格是 `DataGridControl`，**没有可用的 Name/AutomationId**；旧版用 `BoundingRectangle.top > 630` 挑它，这只是本机基线（125% DPI 实测），窗口挪位/换缩放就失效。现优先在 `AutomationId='buildWindowsViewWindow'` 面板子树里找，找不到再退回相对主窗口下半部的几何（§81）。
 - 行内容 = 每行子 `TextControl` 顺序拼接：`编号 | 说明 | 程序 | 位置`。`说明` 里可能含换行，落盘时一行一条会"行数 ≠ 条数"，用 `编号` 去重/排序。
 - 全量读取靠 `ScrollPattern.SetScrollPercent(-1, 0..100 step 5)`，每屏 `sleep 0.35`；**滚动太快会漏行**（实测 385 条漏 4 条）。
-- 面板顶部 `TextControl` 直接给 `N 错误` 与 `M 警告`，用它做"编译结束"的判据比读进度条稳（连续两次轮询相同即结束）。
+- 面板顶部两个按钮（`显示或隐藏错误/警告`）的子 `Text` 直接给数字 `N` / `M`。**但"连续两次轮询相同 = 编译结束"不可靠**：刚点完读到的可能是上一轮陈旧计数，还必须有本轮真的编译过的证据（§81）。
 - 结果**必须写 UTF-8 文件**再看（控制台 GBK，见 §18）。
 
-现成脚本：`scripts/ss_build.py totals|list|run <pid> [out.txt]`。
+现成脚本：`scripts/ss_build.py totals|list|run <pid> [out.txt]`（锚定与结束判据见 §81）。
 
 ## 27. 目标是提权进程时，中权限的注入**静默无效**
 
@@ -780,7 +780,7 @@ Sysmac 的工程树右键菜单是 WinForms 弹层（稳定句柄，类 `Windows
 
 ## 66. 保存这一刀：`Ctrl+S` 会被残留弹层吃掉，菜单项名字带访问键后缀（2026-11-07 实测）
 
-1. **判"保存成功"只看一件事：目标 `.smc2` 的 sha256 变了没有**。标题栏不加 `*`、状态栏不提示、界面全读完也对，`ss_save.py` 的 `#### SAVED (+1s)` 才是结论。
+1. **判"保存成功"看文件不看界面：目标 `.smc2` 的 sha256 变了没有，且归档仍有效**（0.4.0 起两条都要；文件消失/损坏判 `MISSING`/`INVALID`，不算成功，§81）。标题栏不加 `*`、状态栏不提示、界面全读完也对，`ss_save.py` 的 `#### SAVED (+1s)` 才是结论。
 2. 表格里**没关掉的下拉**是一个独立顶层小窗（`HwndWrapper[SysmacStudio.exe;;<guid>]`，实测 93×31，`GWLP_EXSTYLE` 可见但 `Name`/`Title` 全空）。它会在主窗口拿到前台之后继续吃键盘：`force_foreground(主窗口)` + 真 `Ctrl+S` 按下去，文件纹丝不动（`save_final.txt`/`save_final2.txt` 两轮都是这个形状，四个轮询点都能看见这个小窗）。
    - 对策一：保存前 `U.esc(2)`（`ss_save.py --esc 2`，默认就带）；实测 Esc 能把这种弹层关掉，关不掉时它会一直在轮询里出现——**弹层还在 = 别指望键盘**。
    - 对策二（更稳）：**走菜单，不碰键盘**：`ss_save.py --menu` → `文件(F)` 用 `ExpandCollapse.Expand()` 打开，在弹层里按名字找 `保存`，`Click(simulateMove=False)` 点它。这条路实测 +1s 落盘。
@@ -890,7 +890,7 @@ Sysmac 的工程树右键菜单是 WinForms 弹层（稳定句柄，类 `Windows
 ## 75. 读树文字只能用 `TVM_GETITEMW`＋目标进程内缓冲；`TVM_GETITEM`(0x110C) 或本地缓冲会打崩（2026-11-12 实测）
 
 1. `TVM_GETITEM`(0x110C) / `TVM_GETITEMW` 若把 `TVITEMW.pszText` 指向**调用进程**的本地缓冲，
-   目标进程会往一个对它无效的指针写 → **SysmacStudio.exe 直接消失**（本轮 pid 18860 就是这么死的）。
+   目标进程会往一个对它无效的指针写 → **SysmacStudio.exe 直接消失**（本轮一个实例就是这么死的）。
    跨进程 `WM_USER+` 消息不做封送，缓冲必须 `VirtualAllocEx` 到目标进程（同 §33 的指针契约）。
 2. 安全读法已封装在 `ss_uimap.py`：`treelabels` / `node_text` 用 `TVM_GETITEMW`(0x113E)＋目标进程内
    `TVITEMW`+缓冲；`row_rect` 用 `TVM_GETITEMRECT`＋远端 `RECT`（`f=0` 标签 / `1` 整行 / `2` glyph）。
@@ -967,3 +967,107 @@ Sysmac 的工程树右键菜单是 WinForms 弹层（稳定句柄，类 `Windows
    之后从那个实例**保存**会把磁盘补丁覆盖回去；从它**创建库**会产出旧接口的 `.slr`，把已对齐的交付库再次打回原形。
    ⇒ 离线改完磁盘后，要么让开着的实例**从磁盘重开**，要么**不保存地关闭**它，保证磁盘是唯一事实源。
 3. 判"哪个实例开着哪个工程"看主窗口标题（`ss.py wins` / `state`）；多实例时别按 pid 猜，先读标题里的工程名。
+
+## 81. 验证不可靠的四类根因：绝对几何 / 键名 / 陈旧计数 / sha 占位（0.12.0 修复，纯逻辑有单测）
+
+都是"脚本报了成功/失败，但证据根本不支持结论"的可复现 bug，0.12.0 一并收紧：
+
+1. **绝对 Y 常量**：旧 `ss_build.py totals` 硬编码 `Y=620..690` 找头部计数——那是本机窗口位置/缩放下的实测基线，窗口挪位、换 DPI、换分辨率就读不到。现按 `AutomationId='buildWindowsViewWindow'` 锚定编译面板、读面板内 `显示或隐藏错误/警告` 按钮的子 Text；找不到面板 id 才退回**相对主窗口下半部**的几何兜底（窗口矩形现读，control-tree §9）。
+2. **`{PgDn}` 不是 uiautomation 键名**：`SendKeys('{PgDn}')` 抛 `TypeError: ord() expected a character, but string length 4`——未知 `{name}` 被按字面字符发送，多字符串就炸在 `ord()`。正确键名是 `{PAGEDOWN}` / `{PAGEUP}`（源码 `SpecialKeyNames` 可查）。旧 `list` 的键盘兜底因此从未生效；凡用 `{…}` 键名先对照该表，别凭印象写。
+3. **陈旧计数**：编译面板的错误/警告数字在本轮编译开始前**保留上一轮结果**。旧 `run` 以"连续两次读到相同"判结束 ⇒ 上一轮 0 错时，刚点完编译就轮询会读到陈旧 0 并报成功，哪怕本轮根本没编起来。现判据缺一不可：两个计数都读到 + 连续两次稳定且进度条不忙 + **有本轮编译证据**（轮询中见过忙 / 计数变化 / 网格内容变化）;任一不满足判 **INCONCLUSIVE** 返回非 0（忙闲看 ProgressBar，**不用 CPU 增长单独判 PASS**）。结果完全相同的无操作重编译会被判 INCONCLUSIVE（无法判定，非 0）——这是有意的保守：没有观测到编译启动/结束就没有证据，宁可不定论。
+4. **sha 占位 `'-'`**：旧 `ss_save.py` 读 sha 失败返回 `'-'`，于是"文件消失"产生一个与基线不同的假哈希，被误判成"变了=保存成功"。现读失败返回 `None`：保存前基线读不到直接退出（`UNREADABLE`）；轮询中读不到只记录、不算变化；`SAVED` 还要求目标仍是**含条目、CRC 全过的有效 zip 归档**，文件消失/损坏分别判 `MISSING` / `INVALID`（均非 0）。
+
+通用教训：**证据缺失（日志不存在、文件读不到、计数没变）不等于成功证据**。验证脚本必须区分"成功 / 失败 / 无法判定"，无法判定一律非 0；CPU 增长、文件哈希变化这类间接信号只能作旁证，不能单独当功能正确的证明（另见 offline-surgery §8.4 的"假 0 错"）。**主审独立驳回过一个工程旧 watcher：它 `busy_seen=False`、`any_change=False`，却仅凭 CPU 增量宣称"编译完成"——频繁 UIA 轮询本身就会抬 CPU，CPU 增长不能当编译生命周期证明**；这正是 `ss_build.py run` 要求"见过忙 / 计数变化 / 网格内容变化"等真实生命周期证据、否则判 INCONCLUSIVE 的原因。
+
+以上修复的纯逻辑由 `tests/` 单测覆盖（注入假 UI 对象，不需要 Sysmac）；**面板锚定、真机计数读取、保存落盘本身是 UI 行为，仍待真机回归**（extending.md 回归清单）。
+---
+
+## 82. 梯图段文件（PouBody JSON）必须用 Sysmac 原生序列化，否则「源码根本没加载」导致假 0 错（2026-11-15 实测，SSV1.68.0.64010）
+
+比 §46「编译没跑起来」更隐蔽的一类：**编译确实跑了**（ProgressBar 忙、按钮先禁用再恢复、`build_evidence` 成立），但程序体是空的，于是故意埋的未定义标识符也报 0 错。
+
+**症状链**
+
+1. 离线用 Python `json.dumps` 重写 `PouBody <id>.xml` 的 `CLs[0].TXT` 后，`json.loads` / `zipfile.testzip()` / `ss_verify.py` / 单测全部 PASS，`CLs[0].TXT` 里 ST 也确实在；
+2. 打开工程、点 `编译控制器(B)` 或 `工程(P)>检查所有程序(C)`，都返回 `0 错误`（本轮甚至观测到 `(0,N)` 的既有警告，看起来很"真"）；
+3. 打开 ST 程序编辑器看到的是**空梯图 rung**，没有内嵌 ST 框（`CLs[0].__type='IST'` 的东西没被加载）；
+4. 原生保存后 `PouBody` 变成 `{"CLs":[],"RRI":1,"VLs":[]}` —— 因为内存里本来就是空体，保存只是把空体写回磁盘（这也解释了 §45 / offline-surgery §8.4 之前记作 INCONCLUSIVE 的"ST 体丢失"）。
+
+**铁证在错误跟踪日志**，不在界面：
+
+```
+%APPDATA%\OMRON\CXAP\Log\SysmacStudioErrorTrace.log
+  PersisterController.EntityLoadData (Error)
+  DataContractPersister`1.LoadFrom(Stream)
+  LadderBodyPersister.Load(Entity id='<PouBody id>')
+    System.Runtime.Serialization.SerializationException:
+      反序列化对象 属于类型 Omron.Cxap.Modules.LadderLanguage.Core.Models.LadderDiagram 时出现错误。
+      System.Xml.XmlException: 根级别上的数据无效。 第 1 行，位置 1。
+```
+
+**根因：字节格式。** Sysmac 原生写出的段文件是 `DataContractJsonSerializer` 风格：
+
+| 项 | 原生（可用） | Python `json.dumps`（不可用） |
+| --- | --- | --- |
+| 开头 | UTF-8 BOM `\xef\xbb\xbf` | 同（若手工加） |
+| ST 内换行转义 | `\u000d\u000a` | `\r\n` 短转义 |
+| 文件结尾 | **有一个 CRLF** | 无 |
+| 浮点 | `788.80000000000018` | `400`（int） |
+
+只改序列化风格、ST 正文逐字不动，重开后日志增量变为 0，同样一次 `检查所有程序(C)` 从 `(0,N)` 变成 `(1,N)`，唯一错误是 `未定义的标识符'ZZ_COMPILE_PROBE_UNDEF'。 … 示例程序 … ST:line <行号>, column 1`。**单变量对照即可定性。**
+
+**做法**
+
+- 改 `TXT` 优先做**字节级替换**已转义的字符串值（不要整包 `json.dumps` 重排，会同时改键顺序、浮点表示、丢结尾 CRLF）。
+- 若要重建，显式按原生规范生成并逐项校验：BOM、`\u000d\u000a` 数量、结尾 CRLF、ST 与目标文本逐字相等、条目数、`testzip()`。
+- **不要把 `ss_verify.py PASS` 当成「Sysmac 能加载」**：它只查 ZIP / `.oem` / 实体伴生文件，不解析梯图 JSON 的序列化风格。
+- 验证时把「编译前后 `SysmacStudioErrorTrace.log` 字节差为 0」当成硬判据（offline-surgery §8.4 第 3 条）；有新增 `LadderBodyPersister.Load` 就说明程序体没加载，此时 0 错**一律无效**。
+- 另注：`is_busy()` 的 StatusBar/ProgressBar 锚点在本机实测有效（返回明确的 `False`，不是 `None`），`编译控制器(B)` 工具栏按钮靠 `HelpText` 含"编译控制器"定位，其屏幕 Y 会随窗口位置变（实测值与历史值不同），**不要写死坐标**。
+- ESI 核对对话框（「安装的 ESI 与工程中使用的 ESI 不同」）点 `NoButton`：点 Yes 会用机器新装 ESI 替换工程 ESI，污染受控实验。`ss_dlg.py <pid> bind NoButton`，之后 `ss.py state` 正常加载。
+
+---
+
+## 83. 原生保存会重写整个归档：用 GUID 归一化比对证明「关键文件逐字未变」（2026-11-15 实测）
+
+§82 修好段文件格式后，用 `文件(F)>保存(S)`（`ss_save.py --menu`，**不要用裸 Ctrl+S**，残留下拉会吃掉）做原生保存，归档 sha 发生变化。判据必须同时满足：sha 变化 + ZIP 合法 + 结构 PASS。但真正要证明的是「Sysmac 自己的序列化没有把 ST 或轴配置改坏」。
+
+**保存后不要只看条目数。** 原生保存的净变化：
+
+| 变化 | 细节 |
+| --- | --- |
+| `.oem` 顶层 GUID 轮换 | `<旧 GUID>` → `<新 GUID>`，其下所有含 GUID 的文件名一并改名 |
+| 新增 3 个编译结果实体 | `<id>.NexBuildResults / .NexBuildVerifierGroup / .NexTransferInformation` |
+| 3 个同名文件内容变化 | 内嵌 `….zip` 编译产物（字节数小幅变化）、`StorageData/SysmacStudio.stsdb4`、`SourceHolder <id>.xml`（Sysmac 重生成） |
+| 条目数 | **会增加（本例 +3），不可硬编码** |
+
+**正确的比对方法**：把两个归档各自按 `<GUID>/` 前缀剥掉目录名再比（GUID 归一化），然后断言：
+
+- `POUBODY_IDENTICAL=True`（`PouBody <id>.xml` 逐字未变：ST 内容指纹保存前后相同，行数 / CRLF 数 / 裸 LF 0 / 无探针 / BOM + 原生转义 + 结尾 CRLF 全部保留）；
+- `AXIS_IDENTICAL=True`（轴配置 `<id>.xml` 逐字未变，`NexAxisUsingAxis` + `NexAxisVirtualServoType` 均 CurrentValue、关键轴参数未变）；
+- 全部 `NexAssociatedProgram` 任务关联（含示例程序）都在；
+- 错误跟踪日志字节增量 0、mtime 未变（无新增 `LadderBodyPersister.Load`，否则 §82 重现）。
+
+不归一化就会得到「整目录全增全删」的假差异。
+
+**两个踩过的入参 / 判定坑**：
+
+1. `ss_save.py` 输出的是 **16 位 sha 前缀**，传给校验脚本当完整 sha → `sha_expected_match=False`、假 `FAIL`（内容检查其实全 true）。必须传全 64 位。
+2. 某版判定脚本把 `busy_seen=True` 写进 `ok`，比编译证据规则更严：`检查所有程序(C)` 可能比轮询窗口更快结束 → 跑满轮询窗口后假 `INCONCLUSIVE`。正确判据是 **busy_seen OR 两次有效计数/网格快照变化**（`(0,0)→(0,N)`）。**判定脚本不能比规则更严。**
+
+**保存后重开复验**：用 `TerminateProcess` 不保存关闭实例（验证磁盘 sha 未变、文件可写）→ 从磁盘重开工程 → ESI 框 `NoButton` → `ss.py state` 确认加载 → 再编译。**可以不再埋探针**，前提是段文件字节与 §82 阳性对照验证过的版本逐字相同 + 日志增量 0；否则必须重做阳性对照。复验结束同样不保存关闭，让磁盘成为唯一事实源。
+
+---
+
+## 84. ESI 核对框在「正在打开工程」进度框之后才出现（2026-11-16 实测）
+
+用文件关联打开 `.smc2` 后，**立刻**执行 `ss_dlg.py <pid> bind NoButton` 会失败：
+
+```
+no button 'NoButton' in windows ['']
+```
+
+此时 `ss.py state <pid>` 还是 `project=Sysmac Studio (64bit) / controller= / mode= / editors=-1`，`ss.py popups <pid>` 里只有 `ProgressDialog`（「正在打开工程...」+ ProgressBar + 取消按钮），根本没有 ESI 对话框。实测首次点击过早，随后轮询 150 s 仍未自行完成，一度疑似卡死。
+
+**正确做法**：不要依据「历史记录里出现过 ESI 框」就直接点；先轮询 `ss.py state` 与 `ss.py popups`，确认 ESI 核对框（含 `YesButton` / `NoButton`、DataGrid 里是伺服驱动等 ESI 差异行）**确实出现后再点 `NoButton`**。本次 `popups` 复查发现 ESI 框已经出现，此时 `bind NoButton` 一次成功，`ss.py state` 随即显示 `project=<工程名> / mode=Offline / editors=0 / busy=False`、无残留弹层。
+
+失败时**不要**改点 `YesButton`（会用新装 ESI 替换工程 ESI，污染受控实验），也不要判定工程损坏——只是时机不对。

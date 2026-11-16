@@ -17,6 +17,8 @@
   ...（还有别的 GUID 目录，比如库、安全工程）
 ```
 
+**GUID 轮换（实测，原生保存后只读 ZIP 核对）**：Sysmac 原生保存会把**顶层 `<SolutionGUID>` 目录名与 `<SolutionGUID>.oem` 文件名换成一个新 GUID**，但程序 / 轴等**实体 id 保留不变**。所以离线工具必须**按归档里当前的 `.oem` 动态发现根目录**，不能硬编码上一次见过的旧 GUID（`ss_verify.py` 的 `load_oem` 就是扫归档取最短 `.oem` 路径定位根目录，天然适应轮换）。按实体 id 命中配套文件的逻辑不受影响（id 没变）。
+
 `.oem` 的骨架：
 
 ```xml
@@ -173,6 +175,15 @@ ST 本体（FB/函数）文件格式：`<StructuredTextModel xmlns="…Structure
 `TaskExecutionCondition` 是周期**微秒**（200 ms → `200000`），`ExecutionPriority` 4=主周期 / 5=周期任务；
 `<AssociatedProgramData ProgramName="…" IniFileTrackingId="<程序 trackingId 去横线>" SequenceNumber="1" />`。
 
+**任务分配在实体树里的承载（实测：UI 出现 + 原生保存后结构持久化已观察；运行时未验证）**：
+主审独立复核——工程工作副本经 Sysmac **原生保存**后只读 ZIP 核对，主任务（`PrimaryTask`）的
+`<task-id>.xml` 里有 **7 个 `AssociatedProgramData`**，`.oem` 该任务子树下对应挂着 **7 个
+`NexAssociatedProgram` 实体**（含示例程序），新增的 `AssociatedProgramModel` 伴随 XML 也仍在；
+保存前的截图与工程树同样显示该示例。⇒ 任务分配关系由 `NexAssociatedProgram` 实体（+
+`AssociatedProgramModel` 配套）承载，与任务 XML 的 `AssociatedProgramData` 一一对应，原生保存后持久化。
+**这只是"UI 出现 + 保存后结构持久化"层级的证据，尚无重开后 / 运行时执行证明，不要称为执行验证**；
+`NexAssociatedProgram` 是否为运行时必需仍未验证（`ss_verify.py` 对"XML 有关联但子树缺该实体"仍只记 INFO，不判 FAIL）。
+
 ### 8.4 错误模型的真实症状与"假 0 错"（2026-11-06 定位）
 
 把程序写成 `Program / StructuredText` + `Variables / StructuredTextProgram`（旧版本文档的错误结论）时：
@@ -192,7 +203,10 @@ ST 本体（FB/函数）文件格式：`<StructuredTextModel xmlns="…Structure
 2. 面板计数：`N 错误 / M 警告` 两个数字都读到；
 3. **错误跟踪日志在编译前后的字节差为 0**（先记 mark，编译后比对；`trace_mark*.txt` 的写法见 §8.5）。
 
-只满足"0 行"不算通过。
+只满足"0 行"不算通过。**日志文件不存在/读不到时第 3 条不成立**——"读不到字节差"不是"字节差为 0"，
+证据缺失不等于成功证据（[pitfalls §81](pitfalls.md)）。CPU 增长也只是启发式旁证：能证明"进程在干活"，
+不能证明"干的就是本轮编译"，不得单独当编译完成判据。Skill 内置 `ss_build.py run` 不依赖跟踪日志，
+以面板计数 + 本轮编译证据（见过忙 / 计数变化 / 网格内容变化）为判据，缺一返回非 0。
 
 ### 8.5 落盘与验证流程（本次实际执行）
 
@@ -222,7 +236,8 @@ ST 本体（FB/函数）文件格式：`<StructuredTextModel xmlns="…Structure
 
 按轴开关的推荐形态：在已有轴 FB 的配置结构体里加 `xVibEnable : BOOL := FALSE`，
 FB 体内 `IF stAxisCom.stConfig.xVibEnable THEN <新分支> ELSE <原逻辑> END_IF`。
-默认 OFF ⇒ 不启用时对所有轴零行为变化，启用才走新分支；这样改库源不会破坏存量调用。
+默认 OFF ⇒ 不启用时走原逻辑分支，启用才走新分支；这样改库源在编译/结构层面不破坏存量调用
+（**编译与结构验证，非运行时实测**；运行时行为仍需按工程验证，示例运动参数不具普适安全性）。
 
 ## 10. `.slr` 离线补丁：重建后把 FB 接口对齐到目标所依据的已编译库（2026-11-13 实测）
 
