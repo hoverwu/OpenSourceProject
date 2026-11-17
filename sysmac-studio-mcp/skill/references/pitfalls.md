@@ -1071,3 +1071,36 @@ no button 'NoButton' in windows ['']
 **正确做法**：不要依据「历史记录里出现过 ESI 框」就直接点；先轮询 `ss.py state` 与 `ss.py popups`，确认 ESI 核对框（含 `YesButton` / `NoButton`、DataGrid 里是伺服驱动等 ESI 差异行）**确实出现后再点 `NoButton`**。本次 `popups` 复查发现 ESI 框已经出现，此时 `bind NoButton` 一次成功，`ss.py state` 随即显示 `project=<工程名> / mode=Offline / editors=0 / busy=False`、无残留弹层。
 
 失败时**不要**改点 `YesButton`（会用新装 ESI 替换工程 ESI，污染受控实验），也不要判定工程损坏——只是时机不对。
+
+---
+
+## 85. 看不到 UAC 提权弹窗：安全桌面提示 + 从属后台任务生命周期（2026-11-17 实测）
+
+提权 daemon（`Start-Process python.exe -Verb RunAs`）偶尔"启动了却没起来"：宿主后台任务 rc=0、输出宿主退出信息，但就绪标记仍是旧 pid、无 daemon 进程、无错误日志。
+
+**根因诊断（可移植）**：
+1. 先看当前 Agent 进程完整性级别：`[Security.Principal.WindowsPrincipal]::new([WindowsIdentity]::GetCurrent()).IsInRole(Administrator)` 为 False、`whoami /groups` 显示 `Mandatory Label\Medium Mandatory Level` ⇒ 必须 UAC 提权，不能假设已管理员。
+2. 再读 UAC 策略 `HKLM:/SOFTWARE/Microsoft/Windows/CurrentVersion/Policies/System`：`EnableLUA=1`、`ConsentPromptBehaviorAdmin=5`、`PromptOnSecureDesktop=1` ⇒ 确认提示框在**安全桌面**上（屏幕变暗、盖住所有普通窗口）。用户若盯着应用窗口就说"没看到弹窗"，其实是提示框在安全桌面层，需切到该层点「是」。
+3. `Start-Process -Verb RunAs -Wait` 包在**后台宿主任务**里时，宿主任务可能被生命周期回收（没有任何主动停止信号却结束）；这是独立于 UAC 的第二种失效。判断方法同前：就绪标记文件的 pid/mtime 是否刷新，job 通道日志是否有新 job；宿主退出码也要留证（如被控制台终止的 `0xC000013A`）。
+
+**可靠做法**：用**带文件日志的启动器**（把 `Start-Process` 的开始/返回/异常逐行写盘），这样无论 UAC 批准、拒绝还是宿主退出都有确切证据，不留 INCONCLUSIVE。启动后先轮询就绪标记的 mtime + pid 变化，再投一个只读 `admin=True` 探针 job 确认提权令牌，最后才做 UI 操作。**未获用户明确同意不要反复自动重试 UAC**——用户说"无法批准"时应停下等待、如实记录阻塞，等用户准备好再重启。安全桌面提示不是"弹窗坏了"。
+
+---
+
+## 86. 导出菜单项 UIA 树：中文名乱码 + MenuItem 不在菜单弹窗里（2026-11-17 实测）
+
+想枚举某个顶层菜单（如 `模拟(S)`）的全部子项时，两个易踩点：
+
+- **中文名在管道/日志里变乱码**：提权通道的输出或控制台 GBK 会把 `模拟(S)` 打成 `ģʽ(S)`，肉眼无法核对。落盘前用 `name.encode('unicode_escape').decode('ascii')` 转成 `\u6a21\u62df(S)` 这类 ASCII 安全串，需要时再反转义。
+- **点击顶层菜单后，MenuItem 可能就在主窗口 UIA 子树里**（不是独立顶层 HWND）：本次从主窗口 HWND `ControlFromHandle` 出发、递归 depth≤10 收集 `ControlType.MenuItemControl`，一次拿到主菜单 10 项 + 模拟子菜单 26 项及各自 `IsEnabled`；而 `ss.py popups` 当时看不到这些项。不要只在一个地方找：主窗口子树、popup HWND 两处都要试（项目已有只读工具 `ss_uimap.py menus <pid> <out>` 更完整，含二级子菜单，优先用它）。
+- **重复项**：同一次收集里能看到两轮相同 MenuItem（一轮主菜单、一轮展开后），落盘前按 name 去重再数。
+
+**运行态判定**：仅看 `ss.py state` 的 `mode=OnlineSimulator` 字符串不够；再导出一次同一菜单，若 `运行(R)`/`校准(L)` 变 False 且 `暂停(P)`/`停止(S)` 变 True，才构成"程序确实在运行"的闭环证据。
+
+---
+
+## 87. 仿真运行期 ErrorTrace 日志增长属正常，不要误判为编译失败（2026-11-17 实测）
+
+编译场景的硬指标是 `SysmacStudioErrorTrace.log` 增量 0（见 §82）；但**仿真运行期该日志会增长**，本次增长数 KB、约 5–7 条 `traceEventType="Error"`，来源全是仿真器内部通信探针：`ControllerConnectionPortNex2` 的 NEX HTTP `904 Invalid command`、`VariableDataAccessService.SyncRead`、`ExtensionMethods.ThrowArgumentNullException`（`Argument address is null`），并伴随"为模拟作准备(n/3)"进度框。
+
+**判据**：仿真结束时若 ① `mode` 能从 `OnlineSimulator` 回到 `Offline`、② 无用户可见错误弹窗、③ 无 `LadderBodyPersister.Load` 异常、④ 工程副本哈希未变，则这些 trace 是虚拟控制器内部通信噪声，**不构成功能失败**——但必须如实记录增量与来源，不要照搬编译场景的"增量 0"结论。关闭实例时 `TerminateProcess`（不保存）后会再增几条 `SyncRead`，同理。
