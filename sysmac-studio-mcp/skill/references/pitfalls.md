@@ -1104,3 +1104,37 @@ no button 'NoButton' in windows ['']
 编译场景的硬指标是 `SysmacStudioErrorTrace.log` 增量 0（见 §82）；但**仿真运行期该日志会增长**，本次增长数 KB、约 5–7 条 `traceEventType="Error"`，来源全是仿真器内部通信探针：`ControllerConnectionPortNex2` 的 NEX HTTP `904 Invalid command`、`VariableDataAccessService.SyncRead`、`ExtensionMethods.ThrowArgumentNullException`（`Argument address is null`），并伴随"为模拟作准备(n/3)"进度框。
 
 **判据**：仿真结束时若 ① `mode` 能从 `OnlineSimulator` 回到 `Offline`、② 无用户可见错误弹窗、③ 无 `LadderBodyPersister.Load` 异常、④ 工程副本哈希未变，则这些 trace 是虚拟控制器内部通信噪声，**不构成功能失败**——但必须如实记录增量与来源，不要照搬编译场景的"增量 0"结论。关闭实例时 `TerminateProcess`（不保存）后会再增几条 `SyncRead`，同理。
+
+## 88. 只读探索配置入口的几类假象：文件框、停靠页、瞬时 COMError、无文档节点（2026-11-17 实测）
+
+系统遍历菜单配置与工程树配置页时，下列现象都**不是**“功能不存在”或“探索失败”：
+
+1. **名字带 `...` 不等于进入查看器**：`工具>事件日志查看器...` 与 `EtherCAT诊断/统计信息查看器...` 在本上下文都只弹出 Win32 打开文件对话框（`#32770`）。只读探索应 dump 文件框后取消，不要选文件后声称“已看过查看器”。同类项还有 `自定义快捷键` 里的导入/导出。
+2. **配置结果可能是停靠文档，不是顶层弹窗**：`工程>内存使用` 打开的是主窗口内的 `Pane cls='DocumentWindow' Name='内存使用情况'`（`NexMemoryUsageView` + 总数/详细页签）；`ss.py popups` 看不到它。必须 dump 主窗口树，靠 `closeButton` 关闭；收尾用 `ss_uimap.py close <pid> <out> --all` 清掉先前遗留的页签。
+3. **窗口消失瞬间的 COMError 是清理竞态，不是数据丢失**：对刚自行关闭的 HWND 再调 `ControlFromHandle` 会得到 `COMError(-2147220991, …)`；此前窗口树已经完整落盘即可。脚本应把清理包在 `try/except` 里，标 `CLOSE_ERROR`，并随后用 `ss.py popups` 复核“确实没有残留窗口”。
+4. **`open` 报 no-document 是正常结论**：`DB连接设置`、`轴组设置`、`Cam数据设置`、`数据跟踪设置`、从站下的 `数据跟踪设置` 都能被消息选中且点击命中，但 Enter 与“取消选中+真双击”都不开页；取证里的 `rows` 不变、`new windows=[]` 说明**没有对应实体就没有文档**（与 §16.6 一致），不要当成定位失败反复双击。
+5. **`no reachable row` 是另一类结论**：深层行在祖先展开失败时拿不到可见矩形，记为“该行不可达 / INCONCLUSIVE”，与“无文档”分开记录。
+6. **`选项` 多页不要按坐标逐页点**：左侧是 `ListControl id='SectionList'`；用 `SelectionItemPattern.Select()` 切换每项后重 dump，跳过 `SectionList` 子树避免 20 份证据里重复同一大段。底部 `OkButton` / `ImportButton` / `ExportButton` 一律不点，只点 `CancelButton`。
+7. **扫描前先看已有编辑器**：一次批量 `open` 开始前主窗口可能已有别的只读文档；`--close` 只关本次打开的页，不会关它们。要么接受并在结论里写明“遗留页签”，要么收尾 `close --all`，不要让后续 `--depth` 对比被旧页签污染。
+
+## 89. `ss_axis.py` 的树路径末段不等于轴号：轴稀疏编号时会主动中止（2026-11-17 实测）
+
+`ss_axis.py read/set/apply` 用 `verify_axis(root, tree.path.split('.')[-1])` 比对页面里的“轴号”文本，这是一条防止读错轴的保护。若工程树的轴行是**稀疏编号**（例如叶序号 N 的标签写着轴 M，N≠M），直接用 `0.4.0.N` 打开后会在读字段前中止：
+
+```text
+ABORT: path 0.4.0.N wants 轴号 N, the page in front shows M
+```
+
+这不是页面打不开，也不是 UIA 读值失败；脚本已经正确打开 M 轴并拒绝把它的字段当作 N 轴写入。**处理顺序**：先 `ss_uimap.py treelabels` 读真实标签，选叶序号与轴号一致的行；没有一致行时，把“树序号/轴号不一致”记为结论并换轴，或由上层工具显式传入真实轴号后重验，**不要删掉/绕过防护**，更不要在有写入风险的 `set/apply` 上硬试。八子页全字段映射的实测见 [control-tree §20](control-tree.md#20-轴页八子页全字段--归档字段映射2026-11-17-只读实测)。
+
+## 90. 不要用 SendKeys `Shift+F10` 开工程树右键菜单：会误触仿真（2026-11-17 实测）
+
+在 V1.68 上，先用 `ss_tree.py goto <pid> 0.4.0` 选中工程树节点，再发 `ss.py keys <pid> "+{F10}"`，**没有弹出上下文菜单**；第二次重试后出现的弹层是「正在模拟运行 / 为模拟作准备(n/3)」，`ss.py state` 随后变成 `mode=OnlineSimulator`、`editors=1`，并意外打开了一个程序编辑器。即 **Shift+F10 在这套 WPF/WinForms 混合焦点环境里不是安全的“上下文菜单”键**，不要用它做树节点右键入口。
+
+正确路线（不依赖键盘焦点）：
+
+1. `ss_uimap.py treectx <pid> <out> <path> --fit` 只读取菜单，确认目标项存在且 `en=True`；
+2. 用同一进程里的 `row_hit` 取得行的物理坐标 → `right_click` → 从 `menu_popups` 里按 `Name` 找到 MenuItem → 真点击（`InvokePattern.Invoke()` 或按矩形点）；
+3. 绝不为了“快一点”用 `+{F10}` / `VK_APPS` 兜底——`VK_APPS` 还可能弹窗口系统菜单。
+
+若已经误触：立刻 `ss.py menu <pid> 模拟(S) 停止(S)`（不要猜按钮），`ss.py state` 复核 `mode=Offline`，用 `ss_uimap.py close <pid> <out> --all` 关掉意外打开的编辑器，**不保存**，并在协调日志如实记 INCIDENT。该误触仅启动本地虚拟控制器，未在线 / 传送 / 真实轴；但仍属于未授权的仿真动作，必须即时停止并记录。

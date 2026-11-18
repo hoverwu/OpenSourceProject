@@ -158,7 +158,7 @@ Window  cls='Window' id='MainWindow'                      (0,253 1938x1098)   �
 数据跟踪(T)  DB连接设置(N)  …
 ```
 
-**未逐项导出**：视图(V)、工程(P)、控制器(C)、模拟(S)、工具(T)、窗口(W)、帮助(H)。需要时用 `ss.py menu` 配合 `ss.py popups` 现抓（见 [extending.md](extending.md#2-抓一个没见过的菜单)）。
+**已逐项导出**：`插入(I)` 全量、`模拟(S)` 26 项（[tree-node-menus §6](tree-node-menus.md#6-模拟s主菜单与仿真运行态)）、`视图(V)` 27 项、`工程(P)` 12 项、`控制器(C)` 31 项、`工具(T)` 25 项、`窗口(W)` 17 项、`帮助(H)` 12 项（[tree-node-menus §7](tree-node-menus.md#7-六个未逐项菜单的全量只读导出2026-11-17-实测)）。`文件(F)` / `编辑(E)` 仍只记了常用项；需要时用只读工具 `ss_uimap.py menus <pid> <out> [--only=…]` 现抓，见 [extending.md](extending.md#2-抓一个没见过的菜单)。
 
 ## 5. 工具栏（33 个命令 / 6 条 ToolBar）
 
@@ -790,6 +790,13 @@ CB_GETCOUNT(0x0146)=34   CB_GETCURSEL(0x0147)=21   CB_GETLBTEXT(0x0148) → '节
 - 量坐标的算法：截图 → 逐列/逐行找"连续同色段"（`ss_axtable.py` 里的 `vlines()`/`hlines()`，
   子命令 `geom`）。Read 工具给的缩略图是缩放过的，**按它估坐标必然偏**。
 
+**2026-11-17 补充：行集合漂移 + 剩余行的真实通道**（Read-only probe，V1.68 实测）
+
+- 本轮工程的表头下多了一行 `轴名称`，旧基线 17 行序列实际整体下移一行。不要硬套 `Y0=236`；先用 `ss_axtable.py geom` 找水平分隔线，再用已知有值的 `输出设备1` 格做校准：双击后应浮出 `WindowsForms10.COMBOBOX.app.*`，`CB_GETCOUNT` 为从站数（本轮 34）+ `＜未分配＞`，`CB_GETCURSEL` 指向当前绑定。校准成功后再推其它行坐标。
+- `输出设备2` / `输出设备3`：**单击只画出编辑器外观，不产生 Win32 子窗口；真实双击才浮出 `WindowsForms10.COMBOBOX.app.*`**。因此 `ss_axtable.py set/get` 的单点击路线只保证 `out1`，`out2/out3` 必须先双击 realizing combo（可写一个只做“双击 → `CB_*` 读”的包装脚本）。
+- 本轮工程所有轴的 `输出设备2/3` 与各 `通道` 归档值都为空。实测 `out2`/`out3` 的 combo 只有 **1 项 `＜未分配＞`**；`in1ch/in2ch/in3ch/out1ch/out2ch/out3ch` 双击后 **既不出现 COMBOBOX 也不出现 EDIT**。由此得到的是可移植结论：**通道行没有通过这套 Win32 编辑控件写入的证据**；`out2/out3` 虽有 combo，但在没有可选目标的工程里无法验证提交通道，记为 `INCONCLUSIVE / NON_TRANSFERABLE`，不要声称已打通。
+- 若换到确有 secondary 设备/通道分配的工程，应重跑同一 probe：只有 combo 出现 **≥2 项** 且 `cursel` 可读到非 `＜未分配＞` 值时，才继续做“原值写回”的可逆写入验证；否则不写。
+
 ### 17.2 轴页 PDO 映射表（`MultiPDOTableFieldView 详细设置`）
 
 轴页 `轴基本设置` 底部那个 `GroupControl '详细设置'` 展开后是 WPF 网格
@@ -824,6 +831,28 @@ Custom cls='MultiPDOTableFieldView'  →  Group '详细设置'(subsectionExpande
 - 下拉**打开时就定位到当前选中项**（未分配 → 列表底部），所以扫描必须**先向上再向下**；滚轮要点在**弹层自己的矩形中心**（点 `组合框中心+偏移` 会滚到网格上去，列表一动不动）。
 - 虚拟化：一次只实化约 60 项，其余枚举得到但 `IsOffscreen=True`，**矩形是过期的，绝不能点**；`SelectionItemPattern` 在这些行上是 `None`（`Select()` 不可用），`ScrollItemPattern` 在 `uiautomation` 包装上直接 `AttributeError`。可用的兜底是**键入键名**（WPF 文本检索把高亮跳到该项）再 `Enter`。
 
+**跨轴/型号是否同集合（2026-11-18 只读测绘，见 §17.6）**：不必逐轴去点 257 项下拉——`.smc2` 内 EtherCAT 配置 `.dat`（.NET BinaryFormatter，内嵌 `<Dictionary>` XML 对象字典）里就有各从站型号的对象字典全集，可离线按型号哈希比对；本工程 5 个字典只落 **3 种集合**。
+
+### 17.6 PDO 过程数据项集合的跨轴/型号覆盖（2026-11-18 只读测绘）
+
+**结论：项集合由所连从站型号的 ESI 对象字典决定，不是每轴一套。** `.smc2` 里 `<GUID>/<EtherCAT 配置>.dat`（数 MB，.NET BinaryFormatter）内嵌若干 `<Dictionary>…</Dictionary>` XML 对象字典（`ETG.2000` 风格 `<Object><Index>#x…</Index><Name>…</Name>`），每一项过程数据 = 某个 PDO 映射对象（`0x1Axx` 发送 / `0x16xx` 接收）里的一个位，下拉的 257 项就是按位展开的。
+
+本工程 5 个 `<Dictionary>`，按对象索引集合的 SHA256 归为 **3 种**（可离线从归档按索引集 SHA 复现，全程不碰 UI）：
+
+| 字典 | 从站型号 | ProductCode | 对象数 | TPDO / RPDO | 索引集 SHA | 对应轴 |
+| --- | --- | --- | --- | --- | --- | --- |
+| 0 | InoSV660N | `000C010D` | 36 | 1 / 1 | `338394e3…` | 某系列（24 行映射） |
+| 1 | MEDLT83BM | `6158000A` | 637 | 4 / 4 | `20edd589…` | 某型号伺服系列 A（4 轴） |
+| 2 | MBDLT25BM | `61580006` | 637 | 4 / 4 | `20edd589…` | 某型号伺服系列 B（4 轴） |
+| 3 | MCDLT35BM | `61580007` | 637 | 4 / 4 | `20edd589…` | 某型号伺服系列 C（4 轴） |
+| 4 | CTEU-EtherCAT（Festo 阀岛） | `572556` | 27 | 1 / 0 | `c04a499c…` | 阀岛（非轴，未参与 PDO 映射） |
+
+- **可推广边界**：三款 Panasonic(6158…) 伺服虽然型号名不同，**对象索引集合逐字节相同**（同一 SHA `20edd589…`），其 `过程数据` 下拉项集合可视为同一套；InoSV660N（36 对象）与 Panasonic（637 对象）是**两套不同集合**，不能拿一款的下拉项去配另一款。按型号分组判断即可，不必逐轴点下拉。
+- **归档侧佐证**：34 轴里 32 轴有 PDO 映射，分两族——17 行映射（11 个唯一对象，Panasonic 系列）/ 24 行映射（18 个唯一对象，InoSV660N 与 R88D-KN04H-ECT）；2 个 spare 轴（轴0/26）无映射。（可按轴统计映射行数离线复核）。
+- **UI 交叉验证的边界**：只读点开轴1（Panasonic 伺服）`1. Controlword` 行的 `过程数据` 下拉，弹层高仅 70 px、只实化 3 项（当前 `6040h-00.0`、`60F4h-00.0`、`＜未分配＞`），滚轮 80+600 步都不新增 ⇒ **该行下拉是按功能/设备上下文过滤后的短列表，不是 257 项全集**。所以 §17.3 的"257 项"来自能展开全量的行/设备，不能假设每行都给全集；这属于 `INCONCLUSIVE`（未在能出全量的行上重测）。全程 Esc 关闭、未点任何项、未改值。
+- **R88D-KN04H-ECT**（轴4/27 的设备）在本工程 ESI `.dat` 中**只有设备引用**（节点 GUID→型号串 + `6040:00…` 映射），没有独立 `<Dictionary>` 块 ⇒ 其 257 项全集来自本机已安装 ESI、不在工程归档里；"换机器是否仍同集合" `INCONCLUSIVE`。
+- 复现配方：离线从归档提取各 `<Dictionary>` 索引集并分组 + 按轴统计映射族；UI 只读 `ss_axpdo.py collect`（不动折叠）+ 开下拉滚轮收集后 Esc（不点项）。
+
 ### 17.4 界面上灰掉、因此"抄不过来"的轴参数（两份工程都 `IsEnabled=False`）
 
 | 轴 | 参数 | 源 / Copy |
@@ -837,6 +866,25 @@ Custom cls='MultiPDOTableFieldView'  →  Group '详细设置'(subsectionExpande
 
 - 判据在归档里就能读出来，不用去界面摸：`NexAxisUseAxis` 的值带 `NotChangable` ⇒ 该轴**整页**参数（类型/单位/速度）必然灰；`NexAxisStartDirection` 在**已使用**的轴上也是 `en=false`（实测 轴1 两边都灰），说明它由同页另一个选择项（原点返回方式一类）派生——**别为了改它去翻那个上级开关**。
 - **不要试图"临时打开 `轴使用` 把格子变活再改"**：未实测，而且 `轴使用` 一改成使用，软件会去建/占用 `AXIS_REF` 全局变量与任务分配（本轮就为清理这类残留行做过一整轮，见 SKILL §1 里"删除变量表空名行"相关的坑 §22），改回来未必清干净——用一个 spare 轴的 5 个灰值去换工程重新变脏，不值。
+
+### 17.5 灰置参数的三种独立派生判据（2026-11-18 全 34 轴归档对照 + UI 交叉验证）
+
+上一节把"未使用轴"当成灰置的唯一原因，**不完整**。对一次性副本全部 34 轴逐轴比对 `NexAxisUseAxis` / `NexAxisAxisType` / 各字段 `IsEnabled`，灰置实际上有**三条互相独立的派生链**，判据在 `.oem` 归档里就能读，不必去界面摸：
+
+| 派生链 | 归档判据 | 被灰掉的范围 | 本工程样本 |
+| --- | --- | --- | --- |
+| A 未使用轴 | `NexAxisUseAxis = NexAxisNotUsingAxisNotChangable` | 轴类型 / 单位换算 / 最大速度 / 原点返回整组 / 输出设备1 全灰 | 轴26（唯一真正未使用的轴） |
+| B 虚拟轴型 | `NexAxisAxisType` 含 `Virtual`（`NexAxisVirtualServoType` / `NexAxisVirtualEncoderType`） | 即便 `轴使用=使用的轴`，单位换算 / 最大速度 / 原点返回 / 输出设备1 仍灰；但 `轴使用` 与 `轴类型` 两行本身可编辑 | 轴0（用轴 + 虚拟伺服型） |
+| C 原点方式派生 | `NexAxisHomingMode = OriginPreset`（零位置预设） | `NexAxisStartDirection`（原点返回开始方向）及其余原点信号/速度行灰 | 全部 34 轴（含所有已用实轴） |
+
+关键修正与边界：
+
+- **轴0 不能再用"未使用轴"解释**：它在工程里是 `NexAxisUsingAxis`，轴类型也是 `en=true`，但单位/速度/原点/输出设备全 `en=false`——这是**链 B 虚拟轴型**导致，不是链 A。此前 §17.4 说"轴0 两边都是 NotUsing"是另一对工程的状态，不可照搬到本工程。判读顺序应为：先看 `NexAxisUseAxis`，再看 `NexAxisAxisType`，最后看 `NexAxisHomingMode`。
+- **`StartDirection` 全 34 轴 `en=false`，与用轴/轴型无关**：UI 侧交叉验证——八子页导出里，一个已用实轴的 `原点返回方法=零位置预设`，其 `原点返回开始方向` 为 `none+disabled` / `IsEnabled=False`，与归档一致。链 C 判定为 `PASS`（当前工程内一致）。
+- **"改成别的原点方式就能激活 StartDirection" 标 `INCONCLUSIVE`**：本工程 34 轴的 `NexAxisHomingMode` **全是** `OriginPreset`，没有第二种取值做对照，无法证明反向派生；不要为验证它去改原点方式。
+- **`NexAxisMceTypeSelect` / `NexAxisControlType` 也是灰的**：前者全 34 轴 `en=false`（本工程无对照值），后者枚举只有 `NexAxisWithoutControlLoop` 单项 ⇒ 属"无可选值"型灰置，同样不要试图绕开。
+- **可绕开性结论**：三条链都**没有界面开关**；链 A/B 若强行改上游（`轴使用` 或 `轴类型`）会引入 `AXIS_REF` 全局量、任务分配或轴语义变更，链 C 需改原点方式，均有副作用且**未实测**；离线直接改归档灰字段与 UI 派生不一致（见 [offline-surgery.md](offline-surgery.md)），**NON_TRANSFERABLE / 未验证**。正确做法是如实报告差异，不为消除灰值改动工程。
+- 判据可离线复现：`ss_axisparams.table_of(<archive>)` 取每轴行字典，读 `NexAxisUseAxis`/`NexAxisAxisType` 的当前值与各字段 `IsEnabled` 分组即可（按轴行字典分组即可），全程不碰 UI。
 
 
 ## 18. EtherCAT 拓扑树 / 工具箱 / ESI库（2026-11-08 实测，右击插入路线）
@@ -894,3 +942,225 @@ Custom cls='MultiPDOTableFieldView'  →  Group '详细设置'(subsectionExpande
 - 安装文件对话框：Win32 `#32770`，文件名 `EditControl id='1148'`，打开 `ButtonControl id='1'`。
 - Sysmac 自己的消息框：顶层窗 `Name='Sysmac Studio'`、**`AutomationId='MessageBoxView'`**（`ClassName` 只是 `Window`），
   正文是 `ScrollViewer` 里的只读 Edit，按钮是 `ListBoxItem` 包着的 `ButtonControl`。
+
+## 19. 配置对话框与相邻配置页（2026-11-17 只读实测）
+
+> 来源：一次性工程副本；全程只“打开 → dump UIA → 取消/关闭”，**没有**点确定/应用、没有在线/传送/下载/真实轴运动。工程树路径下标随工程变化，按**节点标签**定位；下表只写可移植的控件形状与稳定锚点。
+
+### 19.1 菜单触发的配置对话框 / 文档
+
+| 菜单入口 | 实际形态 | 稳定 UIA 锚点 / 结构 | 只读结论 |
+| --- | --- | --- | --- |
+| `工具(T) > 选项(O)...` | 顶层窗 `选项` | 左 `ListControl id='SectionList'`（20 项），右 `Pane cls='ScrollViewer'` 中逐页 `Custom cls='<…>SettingsSectionView'`，底部 `ImportButton` / `ExportButton` / `OkButton` / `CancelButton` | 逐页切换用 `SelectionItemPattern.Select()`，不要点坐标；**只点 `CancelButton`**，绝不 OK/导入/导出 |
+| `工程(P) > 内存使用(M)` | 主窗口内停靠文档，不是独立弹窗 | `Pane cls='DocumentWindow' Name='内存使用情况'` → `Custom cls='NexMemoryUsageView'` → `TabItem` `总数` / `详细`；总数页 8 组 `Custom cls='BarGraphControl'` | 必须 dump 主窗口树才看得到；页签自身有 `closeButton` |
+| `工具(T) > 事件日志查看器...(V)` / `EtherCAT诊断/统计信息查看器...(V)` | Win32 打开文件对话框（`#32770`，标题为“打开文件”或“打开”） | 标准文件名框 + 打开/取消按钮 | `...` **不等于**直接进入查看器；本次只读取消，未选择文件 |
+| `工具(T) > 自定义快捷键...(S)` | 顶层窗 `快捷键自定义` | `设置目标(T)` ComboBox、命令树 `TreeControl cls='TreeListView'`（主菜单 10 类 + 编辑窗口等）、`Edit id='KeyAssignedTextBox'`、`List id='AssignedCommandListBox'`、`删除快捷键(R)` / `恢复快捷键(O)`（选中项前灰）、`导入` / `导出` / `OK` / `取消` | 只读可完整枚举命令树；不要分配/删除快捷键 |
+| `帮助(H) > 关于Sysmac Studio(A)` | 顶层窗 `关于 Sysmac Studio` | 版本文本（实测 `模块版本 1.68.0.64010` / `标准版 Ver.1.68`）、`List id='InstalledName'`、`确定` | 版本/许可信息可直接读；`确定` 或标题栏关闭均可 |
+| `控制器(C) > 通信设置(C)...` | 顶层窗 `通信设置` | 4 组 `GroupControl`：`连接类型`（radio id `usbDirectRadioButton` / `etnDirectRadioButton` / `usbRemoteRadioButton` / `etnRemoteRadioButton` / `selectRadioButton` + checkbox id `useUsbDirect` / `useEtnDirect` / `useUsbRemote` / `useEtnRemote`）、`远程IP地址`、`选项`、`响应监测时间`；底部 `ButtonOk` | radio/checkbox id 稳定；测试按钮按连接类型灰/亮；只读取消 |
+| `视图(V) > 变量管理器(V)...` | 顶层窗 `变量管理器` | 独立大窗口，完整 UIA 树可直接 dump | 与工程树 `数据>全局变量` 页不是同一个窗口 |
+| `工程(P) > 库(L) > 显示索引(S)` | 顶层窗 `库索引` | `Button id='CreateLibraryReference'`、两个 `CheckBox`（“将引用库包含在工程中。”/“如果工程中的库ID与引用库文件ID不匹配，则通知。”）、`确定` | 点确定会改引用库；只读时只取结构 |
+| `控制器(C) > 安全性(E) > 用户程序执行用ID(I)...` | 顶层窗 `用户程序执行ID(程序)` | 两个 `PasswordBox`（ID + 确认）、长段一次性警告文本、`确定`（空框时灰）/`取消` | 警告原文强调**只能设置一次**且需备份工程；只读取消 |
+| `视图(V) > 管理窗口布局模板...(L)` | 顶层窗 `窗口布局模板管理` | `List id='WindowLayoutTemplatesListView'` + `UpdateButton` / `ApplyButton` / `CreateButton` / `RenameButton` / `RaiseButton` / `LowerButton` / `DeleteButton` / `CloseButton` | 未选中模板时多数按钮灰；只读关闭 |
+| `工具(T) > EtherNet/IP连接设置(N)` / `帮助(H) > 正在升级信息(U)` | 离线态无新顶层窗口 | — | 记为“本次上下文未打开新窗口”，不要推断功能不存在 |
+
+### 19.2 `选项(O)...` 的 20 个设置页
+
+左栏顺序（与 `SectionList` 一致）：`颜色主题` `启动` `工程设置` `窗口` `梯形图编辑器` `ST编辑器` `HMI` `HMI 代码编辑器` `HMI页面编辑器` `程序检查/编译` `变量` `变量和数据类型的注释` `参数编辑器` `同步` `安全` `自动回放` `V+ 程序` `V+变量` `V+ 保存配置` `3D可视化器`。
+
+常见页内锚点：`颜色主题` = `ColourThemeSettingsSectionView`（radio 灰色(默认)/白色）；`梯形图编辑器` = 4 个位置 radio + `CheckBoxAlignRightBusBar` / `RungMinimumWidthSlider` / `FitToEditPaneWidth` / `GuideDisplayCheckBox`；`ST编辑器` = `EnableAutoCompleteCheckBox` / `FontFamilyComboBox` / `EnableArrayIndexMonitorCheckBox` / `Default`；`程序检查/编译` = `doubleCoilCheckBox` / `duplicatedInstanceCheckBox` / `internalVariableReadWriteCheckBox` + `无/警告/错误` radio + `BackgroundBuildCheckBox`；`安全` = 内部/全局变量选择、曝露变量、安全单元恢复文件传送等 checkbox；`3D可视化器` = 多组 `低/中/高` radio。各页还有 `Default` 重置按钮与全局 `ImportButton/ExportButton/OkButton/CancelButton`，**只读探索一律 Cancel**。
+
+### 19.3 工程树相邻配置页（按标签，不按数字路径）
+
+| 节点标签 | 页面根 / 关键结构 | 结论 |
+| --- | --- | --- |
+| `内置EtherNet/IP端口设置` | `Custom cls='ConfigurationView'` → 左 `SectionView` 9 节；`IconView id`依次为 `tcp_ip` `link` `ftp` `ntp` `snmp` `snmp_trap` `fins` `tcpudp_msg_svs_setting_L_normal` `cip`；TCP/IP 正文有 13 个 `Expander`（IP地址-端口1/2、本地主机名、内部网络、默认网关、DNS、主机名-IP地址、KeepAlive、IP路由表、包转发、数据包过滤器等） | 可开；节 id 是稳定锚点，切节点 52×52 `Button` 的中心 |
+| `EtherNet/IP端口设置[单元…]`（CPU/扩展机架下的单元） | 同为 `ConfigurationView`，但只有 5 节：`tcp_ip` `link` `snmp` `snmp_trap` `cip`；TCP/IP 子项文案与内置端口略有差异（如“保持激活”/“IP路由器表”/“端口转发”） | 可开；不要假设与内置端口的节集合相同 |
+| `事件设置` | `Custom cls='EventTableView'` → `CheckBox '编辑多个表'`、语言 ComboBox、注释 Edit、`DataGrid id='DataGridView'`（列：事件代码/事件名称/事件等级/组/详细）、`AddButton` / `DeleteButton` / `SystemAlertMessageTextBox` | 可开；整表 UIA 可读 |
+| `CPU机架: NX总线` | `Custom id='mainEditorView' cls='MainEditorView'` → `Custom id='editor' cls='NXBusEditor'` → `List`（`NXBusMaster` / `NXBusUnit` / `NXBusEndCover` 三类 `ListBoxItem`）+ `GridSplitter` + `UnitSettingsControl > ParameterSettingTable > List id='list'` | 与 X 总线的 `MainEditorView` 同构，只是左侧编辑器类名不同 |
+| 从站节点下的 `参数` | `Custom cls='ParameterEditorControl'`；顶部按钮 `导入` / `导出` / `复制设置` / `Config操作`（本次灰）；`ComboTreeView` 当前显示“所有参数”；`DataGrid id='ParameterGrid' cls='DataGridControl'` 列含 序号 / OD / 描述 / 值 / 驱动值 / 默认 | 可开；离线从站也能看参数表，但导入/导出/Config 按钮不要点 |
+| `DB连接设置` / `轴组设置` / `Cam数据设置` / `数据跟踪设置` / 从站下的 `数据跟踪设置` | `ss_uimap.py open` 取证：`tree focus=True`、`row hit by click=True/True`、`rows` 不变、`new windows=[]` | **没有对应实体就没有文档**，不是定位失败；见 §16.6 同类判据 |
+| 某些深层子单元行 | `open` 报 `no reachable row`（祖先展开失败） | 记为**该行不可达 / INCONCLUSIVE**，不要靠反复双击碰运气；换工程或先手工展开祖先再测 |
+
+### 19.4 只读导出配方
+
+1. 菜单对话框：先用 `ss_uimap.py menus` 拿真实 `Name`（含访问键后缀），再用精确名点击；新窗口出现后 dump 其 HWND 的 UIA 树。
+2. `选项` 多页：找到 `SectionList`，对每个 `ListItemControl` 用 `SelectionItemPattern.Select()`，每次重 dump 主窗口/对话框；跳过 `SectionList` 子树避免重复。
+3. 停靠文档：不要只看 `ss.py popups`；没有顶层弹窗时直接 dump 主窗口树，找 `Pane cls='DocumentWindow'`。
+4. 收尾：按 `CancelButton` / `CloseButton` / 页内 `closeButton` 关闭；最后 `ss_uimap.py close <pid> <out> --all` 清掉遗留页签；实例用 `TerminateProcess` 不保存关闭并核对副本哈希。
+5. 任何 `确定` / `应用` / `导入` / `导出` / 在线 / 传送 / 真实轴动作都不属于只读探索，需单独授权。
+
+## 20. 轴页八子页全字段 ↔ 归档字段映射（2026-11-17 只读实测）
+
+采集法：先用 `ss_axis.py read <pid> <out> <tree.path>` 展开全部 `ExpandCollapse`（包括 `单位换算设置` 的 `subsectionExpander` 与 `轴基本设置` 的第二层 `详细设置`），逐页导出 `label / ControlType / 当前值 / group / enabled / 矩形 / AutomationId`；再用离线 `ss_axisparams.py --all --csv` 读同一轴的 `<AxisSettingEntity> .xml` 叶节点，按当前值、选项枚举、顺序和 Group 交叉配对。**结论仅限“界面可见行 ↔ 归档叶节点”的映射**，不把归档里没有显示成独立行的单位/PDO 内部字段说成界面项。
+
+实测规模：8 个子页共 **92 个实化 UIA 字段行**（`basic_setting` 23、`axes_scale` 13、`axes_dynamics` 16、`axes_io` 9、`axes_limit` 5、`back_original_point` 16、`count_mode_set` 5、`servo` 5）；同一轴归档有 290 个叶节点。多出来的主要是 `*Value2` 单位字段、`PDO0..PDO27` 六元组、版本/历史标记，以及不显示的派生字段。
+
+### 20.1 轴基本设置 `basic_setting`
+
+| UI 标签 | 控件 | `.oem` 字段 | 备注 |
+| --- | --- | --- | --- |
+| 轴号 | Edit | `NexAxisAxisNumber` | 标量 |
+| 运动控制 | ComboBox | `NexAxisMceTypeSelect` | 枚举；本次 disabled |
+| 轴使用 | ComboBox | `NexAxisUseAxis` | 枚举 |
+| 轴类型 | ComboBox | `NexAxisAxisType` | 枚举 |
+| 反馈控制 | ComboBox | `NexAxisControlType` | 枚举 |
+| 输入设备1 | ComboBox | `NexAxisInputDevice1` | 设备引用 |
+| 通道 | ComboBox | `NexAxisInputDevice1Channel` | 随输入设备1 灰置 |
+| 输入设备2 | ComboBox | `NexAxisInputDevice2` | 本次 disabled |
+| 通道#2 | ComboBox | `NexAxisInputDevice2Channel` | 同上 |
+| 输入设备3 | ComboBox | `NexAxisInputDevice3` | 本次 disabled |
+| 通道#3 | ComboBox | `NexAxisInputDevice3Channel` | 同上 |
+| 输出设备1 | ComboBox | `NexAxisOutputDevice1` | 归档存实体 GUID，界面显示解析后的节点/型号 |
+| 通道#4 | ComboBox | `NexAxisOutputDevice1Channel` | 归档 `IsEnabled=False` |
+| 输出设备2 | ComboBox | `NexAxisOutputDevice2` | 设备引用 |
+| 通道#5 | ComboBox | `NexAxisOutputDevice2Channel` | 灰置 |
+| 输出设备3 | ComboBox | `NexAxisOutputDevice3` | 设备引用 |
+| 通道#6 | ComboBox | `NexAxisOutputDevice3Channel` | 灰置 |
+| 输出(控制器到设备) | ComboBox `id=comboDevice` | `NexAxisPDOMappingTable` + `PDO<n>PDOPathName/FunctionNumber/...` | DataGrid 第 2 列，不是标量 |
+| 输出(控制器到设备)#2 | ComboBox `id=comboProcessData` | `PDO<n>PDOPathName` / `PDO<n>FunctionNumber` | DataGrid 第 3 列 |
+| 输入(设备到控制器) | ComboBox `id=comboDevice` | 同上 PDO 家族 | DataGrid 第 2 列 |
+| 输入(设备到控制器)#2 | ComboBox `id=comboProcessData` | 同上 PDO 家族 | DataGrid 第 3 列 |
+| 数字输入 | ComboBox `id=comboDevice` | 同上 PDO 家族 | DataGrid 第 2 列 |
+| 数字输入#2 | ComboBox `id=comboProcessData` | 同上 PDO 家族 | DataGrid 第 3 列 |
+
+`详细设置` 展开后 `DataGrid id='list'` 的列头是 **功能名称 / 设备 / 过程数据**。展开态下只有 3 行有实化矩形，其余为 `IsOffscreen=True` 的 `DataItem`；**本映射不宣称已逐行枚举全部 PDO 行**，逐项集合另见 §17.6。
+
+### 20.2 单位换算设置 `axes_scale`
+
+| UI 标签 | 控件 | `.oem` 字段 | 备注 |
+| --- | --- | --- | --- |
+| 脉冲 / 毫米 / 微米 / 纳米 / 度 / 英寸 | RadioButton | `NexAxisUnitsConversion=EnumElement1..6` | 顺序对应，实测选“毫米”= `EnumElement2` |
+| 电机转一周的指令脉冲数 | Edit | `NexAxisUnitsNumerator` | 伴随 `NexAxisUnitsNumeratorValue2` |
+| 不使用变速箱 | RadioButton | `NexAxisReducerUse=EnumElement1` | 关闭齿轮箱 |
+| 电机转一周的工作行程 | Edit | `NexAxisUnitsDenominator` | 伴随 `NexAxisUnitsDenominatorValue2` |
+| 使用变速箱 | RadioButton | `NexAxisReducerUse=EnumElement2` | 打开齿轮箱；会改变下面三行的 enabled |
+| 工作每转的工作行程距离 | Edit | `NexAxisTravelDistancePerWorkRotation` | 本次因未用齿轮箱而灰置 |
+| 工作齿轮比(减速比的分子) | Edit | `NexAxisWorkGearRatio` | 同上 |
+| 工作齿轮比(减速比的分母) | Edit | `NexAxisMotorGearRatio` | 同上 |
+
+`NexAxisPulseDenominator` / `NexAxisPulseDenominatorValue2` 在归档里有值但不对应独立可见行，属于内部换算伴随字段，不能拿 UIA 行数去反推归档参数数。
+
+### 20.3 操作设置 `axes_dynamics`
+
+| UI 标签 | `.oem` 字段 |
+| --- | --- |
+| 最大速度 | `NexAxisMaxVelocity` |
+| 速度警告值 | `NexAxisWarningVelocityLimit` |
+| 启动速度 | `NexAxisStartVelocity` |
+| 最大点进速度 | `NexAxisMaxJogVelocity` |
+| 最大加速度 | `NexAxisMaxAcceleration` |
+| 加速度警告值 | `NexAxisWarningAccelerationLimit` |
+| 最大减速度 | `NexAxisMaxDeceleration` |
+| 减速度警告值 | `NexAxisWarningDecelerationLimit` |
+| 加速度/减速度超出 | `NexAxisAccDecOveractive` |
+| 换向操作选择 | `NexAxisReverseMovementMode` |
+| 正扭矩警告值 | `NexAxisWarningTorqueLimitPositive` |
+| 负扭矩警告值 | `NexAxisWarningTorqueLimitNegative` |
+| 定位范围 | `NexAxisInPositionBand` |
+| 定位检查时间 | `NexAxisInPositionCheckTime` |
+| 实际速度滤波器的时间常数 | `NexAxisActualVelocityFilterTime` |
+| 零位置范围 | `NexAxisZeroPositionBand` |
+
+上表所有数值项都有同名 `...Value2` 单位伴随字段；界面显示的是数值，单位由当前单位制决定。
+
+### 20.4 其它操作设置 `axes_io`
+
+| UI 标签 | `.oem` 字段 |
+| --- | --- |
+| 立即停止输入停止方法 | `NexAxisEmergencyStopMode` |
+| 限位输入停止方法 | `NexAxisLimitInputStopMode` |
+| 驱动器错误重置监测时间 | `NexAxisDriverAlarmResetTime` |
+| 正扭矩限位最大值 | `NexAxisMaxPositiveTorqueLimit` |
+| 负扭矩限位最大值 | `NexAxisMaxNegativeTorqueLimit` |
+| 立即停止输入逻辑反转 | `NexAxisImmediateStopInputLogicInversion` |
+| 正限位输入逻辑反转 | `NexAxisPositiveLimitInputLogicInversion` |
+| 负限位输入逻辑反转 | `NexAxisNegativeLimitInputLogicInversion` |
+| 首页接近输入逻辑反转 | `NexAxisHomeProximityInputLogicInversion`（标签与字段名措辞不同，按当前值/选项/顺序配对） |
+
+### 20.5 限位设置 `axes_limit`
+
+| UI 标签 | `.oem` 字段 | 备注 |
+| --- | --- | --- |
+| 软件的限位 | `NexAxisSoftwareLimitMode` | 枚举；决定下面两行 enabled |
+| 正软件限位 | `NexAxisPositiveSoftwareLimit` | 本次模式为“无效”故灰置 |
+| 负软件限位 | `NexAxisNegativeSoftwareLimit` | 同上 |
+| 位置偏移超出值 | `NexAxisFollowingErrorLimit` | group=`位置偏移` |
+| 位置偏移警告值 | `NexAxisFollowingErrorAlarmLimit` | group=`位置偏移` |
+
+### 20.6 原点返回设置 `back_original_point`
+
+| UI 标签 | `.oem` 字段 |
+| --- | --- |
+| 原点返回方法 | `NexAxisHomingMode` |
+| 原点输入信号 | `NexAxisOriginInputMode` |
+| 原点返回开始方向 | `NexAxisStartDirection` |
+| 正限位输入时操作选项 | `NexAxisOperationPositiveLimitInput` |
+| 原点输入检测方向 | `NexAxisOriginInputDetectionDirection` |
+| 负限位输入时操作选项 | `NexAxisOperationNegativeLimitInput` |
+| 原点返回速度 | `NexAxisHomingVelocity` |
+| 原点返回接近速度 | `NexAxisHomingApproachVelocity` |
+| 原点返回加速度 | `NexAxisHomingAcceleration` |
+| 原点返回减速度 | `NexAxisHomingDeceleration` |
+| 原点返回加加速度 | `NexAxisHomingJerk` |
+| 原点输入掩码距离 | `NexAxisOriginInputMaskAmount` |
+| 原点偏移量 | `NexAxisOriginPositionOffset` |
+| 原点返回持续时间 | `NexAxisPushTime`（标签/键名不同） |
+| 原点返回补偿值 | `NexAxisOriginCompensationValue` |
+| 原点返回补偿速度 | `NexAxisCompensationVelocity` |
+
+`NexAxisHomingMode=OriginPreset`（零位置预设）时，除“原点偏移量”外上述多数行 `IsEnabled=False`；这与 §17.4 的灰置来源一致，不要因为读不到值就判断映射缺失。
+
+### 20.7 位置计数设置 `count_mode_set`
+
+| UI 标签 | `.oem` 字段 |
+| --- | --- |
+| 线性模式 | `NexAxisCountMode=EnumElement1` |
+| 循环模式 | `NexAxisCountMode=EnumElement2` |
+| 模最大位置设置值 | `NexAxisModuloMAXPosition` |
+| 模最小位置设置值 | `NexAxisModuloMINPosition` |
+| 编码器类型 | `NexAxisEncoderTypes` |
+
+### 20.8 伺服驱动设置 `servo`
+
+| UI 标签 | `.oem` 字段 |
+| --- | --- |
+| 模最大位置设置值 | `NexAxisServoDriverModuloMAXPosition` |
+| 模最小位置设置值 | `NexAxisServoDriverModuloMINPosition` |
+| PDS状态控制方法 | `PowerDriveSystemStateControlMethod` |
+| 检测 | `MainCircuitPowerObserveEnable=EnumElement1` |
+| 不检测 | `MainCircuitPowerObserveEnable=EnumElement2` |
+
+### 20.9 只读判定边界
+
+- 本表是**字段映射**，不是写入验证；`enabled` 是界面当次状态，切换上游枚举（单位、齿轮箱、软件限位、原点返回方法、计数模式）会改变下游行的可编辑性。
+- 归档里有而 UI 没有独立行的典型家族：`*Value2`、`NexAxisPdoAiosmapVersion`、`CorrectedFunctionIsIndispensable`、`PDO0..PDO27{PathName,FunctionNumber,ODBitLocation,MappedDevice,MappedChannel,Indispensable}`。
+- `ss_axis.py read` 的轴号防护用 `tree.path` 末段与页面“轴号”文本比对；**树序号不等于轴号**的工程会在 `0.4.0.N` 打开轴 N 时被防护中止，应选末段与轴号一致的行，或先由 `treelabels` 读出真实轴号，不要删掉防护硬读。
+
+## 21. 从站「参数」页导航图：按节点类型配什么、在哪配（2026-11-18 只读）
+
+> 用户口径：**节点参数随所配节点而变，不需要逐项穷举**；目标是“哪类节点大致配什么参数、大致在哪配”。所以本节只记导航形状与参数**大类**，不列具体 Pnxxx 项（项集合另见 §17.6 的 ESI 字典）。
+
+### 21.1 在哪打开
+
+- 入口：工程树 `配置和设置(EtherCAT) > 节点N : <型号> (<轴名>)` 下的子节点 **`参数`**，树路径形如 `0.0.25.0`（实测 `ss_uimap.py open <pid> <out> <节点树路径>` 可打开）。
+- 打开后的文档是一个停靠 Pane（`AutomationId='ParameterEditorControl'`），顶部 4 个按钮：`导入` / `导出` / `复制设置` / **`Config操作`（disabled）**；下面是 `ComboBoxTreeView > Button '所有参数'` 过滤器 + `DataGrid id='ParameterGrid'`。
+- `ParameterGrid` 列：`序号 / OD / 描述 / 值 / 驱动值 / 默认 / 范围 / 单元 / 数据属性`（+ 值状态图标列）。**值单元格是 `ParameterEditorValueEditor > ComboBox`**（枚举型参数），`数据属性` 列带 tooltip 说明何时生效（如"C: 控制电源重置后或 EtherCAT 配置命令后更新"）。网格下方有参数说明文本框 + `参数一览 / 说明 / 程序 / 位置` 之类页签。
+- **只读边界**：`导入`/`导出`/`复制设置`/`Config操作` 都不要点（会改从站参数或触发写入）；值单元格是 ComboBox，读它的当前文本即可，不要展开选中。
+
+### 21.2 哪类节点配什么（按 ESI 对象字典大类，本工程 5 类从站）
+
+`.smc2` 内 EtherCAT 配置 `.dat` 的每个 `<Dictionary>` 就是该型号的**可配参数全集**（离线可按各 `<Dictionary>` 的 OD 区间统计）。按 OD 区间看参数大类：
+
+| 节点类型（本工程实例） | 字典规模 | 参数大类（按 OD 区间） | 配置位置 |
+| --- | --- | --- | --- |
+| 伺服 Panasonic MEDLT83BM / MBDLT25BM / MCDLT35BM | 637 对象 | `1000h-1FFF` 通信 profile（设备类型/身份/诊断历史/参数存储）；`3000h-3FFF` **厂商参数区 411 项**（控制模式、实时自动增益、机械刚性惯量比等 Pn 参数）；`4000h-5FFF` 厂商扩展 122 项；`6000h-6FFF` PDO/设备对象 83 项（错误码/控制字/状态字/quick-stop 等） | 该从站 `参数` 页 `ParameterGrid`，过滤器“所有参数” |
+| 伺服 InoSV660N | 36 对象 | `1000h-1FFF` 通信 22 项；`6000h-6FFF` 设备/PDO 14 项（跟随误差窗口、位置窗口、原点偏移、极性、profile 加减速等）；**无 3000h 厂商大参数区** | 同上；参数远比 Panasonic 少 |
+| 伺服 R88D-KN04H-ECT（A/B_YT_Y） | 无独立字典（本机已安装 ESI） | UI 实测 `Pn000…` 系列（旋转方向切换、控制模式、实时自调整等），OD 显示为 `3000.00` 一类 | 同上；`0.0.25.0` / `0.0.40.0` 已实测可开 |
+| 远程 I/O / 耦合器（GX-JC06、NX-ECC203 等） | 无轴参数字典 | 这类节点主要是 **I/O 映射与模块设置**，不是 Pn 参数；本工程未在 `参数` 页逐项展开 | 通常在节点自身的设置页 / I/O 映射页，不是 Pn 参数网格 |
+| Festo CTEU-EtherCAT 阀岛 | 27 对象 | `1000h-1FFF` 通信 14 项；`7000h+` 厂商/诊断 13 项 | 阀岛专用配置，非轴参数 |
+
+- **厂商 / 型号决定参数粒度（用户 2026-11-18 21:05 补充）**：不同厂商的节点配置进去后，能改的参数本就不一样；**同为伺服驱动器，若配置的是 OMRON 自家节点，通常能配置更多详细参数**（本工程 R88D-KN04H-ECT 的 `参数` 页 UI 已实测到 `Pn000…` 系列）。第三方伺服按各自 ESI 字典决定粒度：Panasonic 三型号有 411 项 `3000h` 厂商参数，InoSV660N 仅 36 项通信 + 设备/PDO、无厂商大参数区。**不要跨厂商套用某一家的 Pn 列表。** 这条是用户实战经验补充；本轮未为验证"OMRON 一定比所有第三方更详细"再穷举跨型号 UI，详细程度按经验规则使用。
+- **可推广结论**：只有**伺服驱动器**从站的 `参数` 页是 Pnxxx 大参数网格；I/O / 耦合器 / 阀岛配的是各自模块设置，不要套用 Pn 参数模型。同为伺服时，**参数大类与粒度由「厂商 + 型号 + ESI 字典」共同决定**（Panasonic 三型号同集 411 项厂商参数；Ino 只有 36 项通信+设备对象；OMRON 自家伺服按用户经验更细），所以"配什么"先看厂商与型号，再看 ESI 字典，不能只看"是不是伺服"。
+- **未覆盖 / INCONCLUSIVE**：本工程只实测打开 R88D 的 `参数` 页（本轮），其它从站型号的 `参数` 页只从归档字典推大类，未在 UI 逐页打开；工程树里除 R88D 两节点外其余节点的 `参数` 子节点未展开（tree 只实化展开态），不虚构全覆盖。逐项参数值因节点配置而异，不在本导航图范围。
+- 复现：`ss_uimap.py open <pid> <out> <节点树路径>.0` 打开 `参数` 页；离线按 OD 区间统计各型号参数大类。
+
