@@ -1071,6 +1071,7 @@ no button 'NoButton' in windows ['']
 **正确做法**：不要依据「历史记录里出现过 ESI 框」就直接点；先轮询 `ss.py state` 与 `ss.py popups`，确认 ESI 核对框（含 `YesButton` / `NoButton`、DataGrid 里是伺服驱动等 ESI 差异行）**确实出现后再点 `NoButton`**。本次 `popups` 复查发现 ESI 框已经出现，此时 `bind NoButton` 一次成功，`ss.py state` 随即显示 `project=<工程名> / mode=Offline / editors=0 / busy=False`、无残留弹层。
 
 失败时**不要**改点 `YesButton`（会用新装 ESI 替换工程 ESI，污染受控实验），也不要判定工程损坏——只是时机不对。
+（2026-11-20 补充：有的副本工程**根本不触发** ESI 核对框——实测另一个引用无源库的工程，首开与重开都没有该框，轮询 150 s 只见到进度框；「先轮询 `popups` 确认出现再点」的原则不变，没出现就不要硬点。）
 
 ---
 
@@ -1138,3 +1139,149 @@ ABORT: path 0.4.0.N wants 轴号 N, the page in front shows M
 3. 绝不为了“快一点”用 `+{F10}` / `VK_APPS` 兜底——`VK_APPS` 还可能弹窗口系统菜单。
 
 若已经误触：立刻 `ss.py menu <pid> 模拟(S) 停止(S)`（不要猜按钮），`ss.py state` 复核 `mode=Offline`，用 `ss_uimap.py close <pid> <out> --all` 关掉意外打开的编辑器，**不保存**，并在协调日志如实记 INCIDENT。该误触仅启动本地虚拟控制器，未在线 / 传送 / 真实轴；但仍属于未授权的仿真动作，必须即时停止并记录。
+
+## 91. 未关的 WPF 模态对话框吞掉工具栏/菜单点击：编译假 INCONCLUSIVE，先查模态（2026-11-20 实测）
+
+在某工程副本上点 `编译控制器(B)`，`ss_build.py run` 反复 INCONCLUSIVE：busy 永远不可见、计数与网格纹丝不动、重试多次全一样。真因是**屏幕上还开着 WPF 模态「库索引」对话框**——只要它在，所有工具栏/菜单点击都被它静默吞掉，点击"落空"不报任何错（§23 讲的是 `#32770` 残留；**WPF 对话框不是 `#32770`**，按 `#32770` 过滤 `EnumWindows` 找不到它）。§23.4 记过它让树双击失灵，本条补上：**工具栏（编译按钮）同样被吞，且症状恰好是 `run` 判据里的"无证据"**，会把「有模态挡着」伪装成「编译判据不满足」。
+
+做法：
+
+1. `run` 反复 INCONCLUSIVE 时先 `ss.py popups <pid>` + 截图**双确认**有没有模态窗，不要先怀疑工具或加长超时。
+2. 关闭走 UIA：枚举该 pid 顶层窗口找「库索引」，Invoke 它的 `确定`（WPF 按钮 Invoke 可用，不需要前台）。
+3. 关掉后首次 `run` 即 PASS（实测）。点击"没反应"不等于按钮坏了——先清模态。
+
+## 92. 系统级弹层（「选择应用打开此 .pdf」SystemSettings CoreWindow）抢焦点吞掉全部点击：WM_CLOSE 无效，用 ESC（2026-11-20 实测）
+
+清掉 Sysmac 自己的模态后，菜单/工具栏点击**仍然**全部落空——截图发现屏幕中央盖着一个 Windows「选择一个应用以打开此 .pdf 文件」弹层（`CoreWindow` 类，进程 `SystemSettings.exe`，与 Sysmac 无关，多由双击未知文件触发）。它抢走前台焦点，所有点向 Sysmac 的输入都被它吞掉。
+
+- `PostMessageW(WM_CLOSE)` 对 UWP `CoreWindow` **无效**（实测发了很多次弹层不消失）。
+- 可靠解除：对它发 **ESC**——`keybd_event(0x1B, …, 0, 0)` + `KEYEVENTF_KEYUP` 两次，实测弹层即关、Sysmac 恢复可点。
+- 教训：点击全部落空且 `popups` 里没有 Sysmac 模态时，**先全屏截图查系统弹层**，不要继续重试点击或怀疑坐标；「点不进去」的另一个源头在 Sysmac 之外。截图走像素通道不受 UIPI/焦点影响，是发现这类干扰的唯一可靠手段。
+
+## 93. 关闭带未保存修改的实例弹 WPF 保存确认框：标题=工程名、非 #32770，按 pid 找窗 + Invoke 否(N)（2026-11-20 实测）
+
+对有未保存修改的实例发 `WM_CLOSE`，出现的保存确认（是(Y)/否(N)/取消）是 **WPF 窗口**：顶层窗口 `Name` 就是**工程名**（如 `<工程名>`），不是「Sysmac Studio」，也不是 `#32770`——只扫 `#32770` 的收尾脚本会完全漏掉它，然后卡在等进程退出的循环里。
+
+做法：
+
+1. 枚举该 pid 的**全部**顶层可见窗（不过滤类名），标题与工程名精确匹配的那个就是它；
+2. 子按钮里找 Name 含「否」的 `ButtonControl`，`InvokePattern.Invoke()`（WPF 按钮 Invoke 可用；它的 `BoundingRectangle` 可能过期，**别按矩形坐标点**）；
+3. 点完否后进程还要**几十秒**才真正退出——轮询存活判据把超时放宽（实测 40 s 时窗口仍在、约 1 分钟后消失），不要提前判"没退成"。
+
+## 94. `工程(P)>检查所有程序(C)` 对无改动工程是瞬时 no-op：单独不构成编译证据（2026-11-20 实测）
+
+对刚打开、未做任何修改的副本执行 `工程(P)>检查所有程序(C)`：菜单项真实可点（菜单弹出、项可枚举、点击成功），但**检查瞬时完成**——状态栏 busy 不可见、编译计数/网格零变化。所以它**不能当"编译发生过"的证据**用；要落编译证据只有 `编译控制器(B)`（首编）能满足 §5.1 的 busy OR 快照变化判据。审计/验证类流程里如果只跑了检查所有程序，如实记 `INCONCLUSIVE`，不要拿它凑 PASS。另注：V1.68 主菜单**没有**「生成」菜单，编译/检查入口分别在各自主菜单（`编译控制器(B)` 是工具栏按钮；`检查所有程序(C)` 在 `工程(P)` 下）。
+
+## 95. 提权 daemon 的命令行参数带不了中文：argv 过 GBK 变 mojibake，中文常量要硬编码进脚本（2026-11-20 实测）
+
+常驻提权 daemon（§85 场景，job 文件协议投递命令）里，**经命令行 argv 传递的中文会在 job 文件 → 进程启动这条链上被 GBK 损坏**：`模拟(S)` 之类的菜单名变成乱码后，脚本按 `Name` 精确匹配**静默 not found**——不报错、脚本"正常结束"，实际什么都没点。这与 §86 不同：§86 是**输出侧**（日志里的中文名乱码，用 `unicode_escape` 落盘），本条是**输入侧**（参数根本到不了）。
+
+修复：
+
+1. 中文字符串（菜单名/按钮名/窗口标题）**硬编码在脚本文件里**（脚本源码按 UTF-8 读取，不受 argv 编码影响），argv 只传 ASCII——pid、路径、输出文件名；
+2. daemon 控制台是 GBK，直接 print 中文会 UnicodeEncodeError 或乱码——结果写 UTF-8 文件，或跑前 `PYTHONIOENCODING=utf-8`；
+3. 判据复归"点完必须回读效果"（窗口出现/状态变化），不要因为退出码 0 就当点击成功。
+
+## 96. 库索引的表格不向 UIA 暴露行：`LibraryDataGrid` 是个空壳，判据必须换（2026-11-21 实测）
+
+`工程(P)>库(L)>显示索引(S)` 打开的 `库索引` 窗口里，列表根是 `CustomControl class='LibraryDataGrid'`，
+它的 UIA 子树只有 `Pane id='itemScrollViewer'` + 它自己——**没有 `DataItem`/`ListItem` 行，也没有承载行文字的 `Text` 子节点**。
+于是下面这些全部无效（都试过）：
+
+| 做法 | 结果 |
+| --- | --- |
+| 数 `DataItem/ListItem` 行 | 恒 0 |
+| 找"库文件名"子串 | 找不到（没有任何 `Text` 承载它） |
+| 坐标点展开箭头（x 全扫 9 个点） | 行不变，dump 前后完全一致 |
+| 双击行 | 无反应 |
+| `SetFocus` + `VK_DOWN`/`VK_RIGHT` | 无反应 |
+
+⇒ 两条替代判据：
+
+1. **离线**：`ss_libref.py <pid> <out> list <工程.smc2>` 读归档 `ReferredLibrary/LibraryModel`
+   （`Name`/`Version`/`LibraryId`/`LibraryFilePath`/`IsSource`/`IsDisableSourceDisplay`）。这是"到底挂了什么库"的唯一可靠取证，且不需要 Sysmac 在跑。
+2. **界面旁证**：打开程序编辑器后工具箱出现分组按钮 ` <库名> ( <版本> )`（`AutomationId='groupToggle'`），再按 §97 列 POU。
+
+另外，`select`/`delete` 只能按**窗口相对坐标**点行（125% DPI 基线：`left+196, top+85`，行高约 36 px）。
+多库时**务必**用 `--row N` 指定行号，默认点第一行会删错库——旧版 `replace` 就写死"选第一行"。
+
+## 97. 折叠的库分组不向 UIA 暴露子项：`toolbox` 必须先展开（2026-11-21 实测）
+
+工具箱里的库分组是 `Button AutomationId='groupToggle'`，**折叠状态下它的 POU 子项根本不在 UIA 树里**——
+只跑一遍 walk 会得到"分组名齐全、POU 一个都没有"的假象。必须对每个 `groupToggle` 判 `ToggleState`，
+处于 Off 的调 `Toggle()` 展开后再重走。
+
+展开后的结构（实测）：
+
+```
+Button| <库名> ( <版本> )|groupToggle            ← 分组
+Button|||Button                                     ← 每个 POU 一个
+  Custom|||FunctionBlockToolboxControl              ← 类型（Function/FB 两种 Control）
+  Edit|textBox|TextBox
+    Text| <FB名>|TextBlock                  ← POU 名（前导空格）
+```
+
+判据：`toolbox` 日志里 `# groups=N pous=M`，M 应等于该库公开 POU 数（本例 7）。
+
+## 98. Git Bash 会把 `盘符:\…` 改写成 `盘符:/…`：native 文件对话框报"文件名无效"（2026-11-21 实测）
+
+在 Git Bash 里把 Windows 路径当参数传给 Python/脚本时，MSYS 会做路径转换：`<盘符>:\某目录\x.slr` 变成 `<盘符>:/某目录/x.slr`。
+Sysmac 的「引用库文件」对话框**不接受正斜杠**，于是报 `…文件名无效。`。`MSYS_NO_PATHCONV=1`、`MSYS2_ARG_CONV_EXCL='*'`
+**都拦不住**（它们只影响部分场景）。
+
+三种可用解法（按稳妥程度）：
+
+1. 路径**在 Python 里用 `r"<盘符>:/…"` 拼**，再交给 UI 代码——最稳，不受 shell 影响；
+2. `ss_libref.py` 支持 `@文件` 形式：把路径写进一个 UTF-8 文本文件，参数传 `@该文件`，脚本自己读；
+3. 走剪贴板：先把完整反斜杠路径放进剪贴板再 Ctrl+V（脚本内已这么做），但**参数本身仍要正确**。
+
+判据：粘贴后**读回输入框 `Value` 与目标路径逐字符相等**才点 `打开(O)`；不等就中止，别硬点。
+
+## 99. 判型别手数标签：`<EncryptedFile>` 是 HTML 转义的，且"有密文 ≠ 源码被隐藏"（2026-11-21 实测）
+
+两件事都发生在"判断这是个什么库"这一步，而且**判错不是数值错，是岔路口走错**——会把整个分析方向带偏。
+
+### 99.1 转义坑：数原始 XML 会得 0
+
+PouBody 实体的正文是 `StructuredTextModel` 里**再包一层 XML 字符串**，里面 `<EncryptedFile>` 存成
+`&lt;EncryptedFile&gt;`。所以：
+
+```python
+raw = z.read(name).decode("utf-8-sig", errors="replace")
+raw.count("<EncryptedFile>")            # → 0    （陷阱）
+html.unescape(raw).count("<EncryptedFile>")   # → 7    （正确）
+```
+
+得 0 的后果：误判"这个库没有加密源码、AES 配方不适用"，于是跳过解密、转去解析编译体，白跑一趟。
+**判据：raw 与 unescaped 两个数都打出来，不相等就必须停下来想。**
+
+### 99.2 假模型坑：`.smc2` 里有两个 `LibraryModel`
+
+- `ReferredLibraries > ReferredLibrary > data > LibraryModel` → **被引用库**（要判的就是它）
+- `BuildOption > data > LibraryModel` → **工程自身**的构建选项，`Name`=工程名，`IsDisableSourceDisplay=true` 属正常
+
+拿 `BuildOption` 那个判型，会把"源可见"判成"禁显"。按**祖先链**剔除（不是按 Name 猜）。
+
+### 99.3 有密文 ≠ 被隐藏
+
+改旗标重建库样本的 `IsDisableSourceDisplay=false`，但 7 个密文 Body 与原库**逐字节相同**
+（lock 也相同）。"改旗标"只放开显示，Sysmac 现解现显示；**密文和钥匙都还在库里**。
+所以至少两种"源可见"终态，处置不同：
+
+| 终态 | 载体 | 含义 |
+| --- | --- | --- |
+| 改旗标 | 密文保留 | 自己能看；分发出去等于公开源码（谁都能解）；对方改回旗标就再"禁显" |
+| 明文装配 | 无密文、`<Text>` 明文 | 真交付源码；体积明显下降（本例约降到三分之一）；不可逆 |
+
+### 99.4 正确做法
+
+**跑命令，不手写判据**：
+
+```bash
+python $S/ss_libtype.py "库.slr"          # 人读：TYPE / 旗标 / 双计数 / NEXT
+python $S/ss_libtype.py "工程.smc2" --json
+python $S/ss_libtype.py --selftest        # 11 项夹具，含转义样本与 BuildOption 干扰样本
+```
+
+它内部做三件人容易忘的事：先 `html.unescape`、双计数并列打印（不等即 `ESCAPING` 警告）、
+按祖先链剔 `BuildOption`（旗标不一致时警告）。

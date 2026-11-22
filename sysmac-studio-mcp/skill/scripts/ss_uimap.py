@@ -19,6 +19,13 @@ Author: hoverwu | version: 0.1.0 | unofficial. Must run ELEVATED (Sysmac runs Hi
         Real right-click at physical px, dump the popup, Esc to close.
   ss_uimap.py editor <pid|auto> <out>
         Which editors are open (TabbedMdi), their option tabs + left nav + tool strips.
+  ss_uimap.py text <pid|auto> <out> [--title PREFIX] [--st FILE] [--raw]
+        Dump the FULL text of every open ST editor (SyntaxEditor, AutomationId
+        textEditor) through TextPattern.DocumentRange.GetText(-1), plus chars/lines/
+        sha256 of the CRLF-normalised text. This is how "what the editor shows" is
+        compared against an offline plaintext body; `editor` alone only maps the
+        shell. A library POU has no tree path - reach it with scripts/ss_libsrc.py
+        (toolbox group -> right-click instance -> 转到下层) first.
   ss_uimap.py open <pid|auto> <out> 1.0.2.3 0.0 ... [--fit] [--depth N] [--all]
                                              [--pat] [--expand] [--close]
         OPEN the editors for these tree paths - click + real VK_RETURN, and if that
@@ -58,6 +65,7 @@ item, never types into a field, never saves. Destructive entries are only *recor
 """
 import ctypes
 import ctypes.wintypes as wt
+import hashlib
 import os
 import sys
 import time
@@ -2039,6 +2047,88 @@ def cmd_editor(argv):
     return 0
 
 
+def cmd_text(argv):
+    """Dump the full text of every open ST editor (SyntaxEditor / AutomationId=textEditor).
+
+    ss_uimap.py text <pid|auto> <out> [--title PREFIX] [--st FILE] [--raw]
+
+    Why: `editor` only maps the shell; the ST source lives in a TextPattern, not in
+    Value/Name. This is the only way to compare "what the editor shows" against an
+    offline plaintext body. Text is normalised (CRLF->LF, strip outer blank lines)
+    before hashing; pass --raw to also write the untouched string.
+
+    Measured 2026-11-21: SyntaxEditor answers TextPattern.DocumentRange.GetText(-1)
+    with the whole buffer (no truncation; measured), and the control carries no
+    Name/Value, so locating it by AutomationId == 'textEditor' is the stable key.
+    """
+    pid = resolve_pid(argv[0])
+    out = argv[1]
+    prefix = ''
+    st_path = ''
+    for i, a in enumerate(argv):
+        if a == '--title' and i + 1 < len(argv):
+            prefix = argv[i + 1]
+        elif a.startswith('--title='):
+            prefix = a.split('=', 1)[1]
+        elif a == '--st' and i + 1 < len(argv):
+            st_path = argv[i + 1]
+        elif a.startswith('--st='):
+            st_path = a.split('=', 1)[1]
+    mw = main_window(pid)
+    root = auto.ControlFromHandle(wt.HWND(mw['hwnd']))
+    lines = []
+    hits = 0
+    stack = [(root, 0)]
+    while stack:
+        c, d = stack.pop()
+        try:
+            if (c.AutomationId or '') == 'textEditor':
+                title = ''
+                p = c
+                for _ in range(8):
+                    p = p.GetParentControl()
+                    if p is None:
+                        break
+                    if p.ClassName == 'DocumentWindow' or p.ControlTypeName == 'PaneControl':
+                        if (p.Name or '').strip():
+                            title = p.Name.strip()
+                            break
+                if prefix and not title.startswith(prefix):
+                    continue
+                try:
+                    raw = c.GetTextPattern().DocumentRange.GetText(-1)
+                except Exception as e:
+                    lines.append('EDITOR %r GetText failed: %r' % (title, e))
+                    continue
+                t = raw.replace('\r\n', '\n').replace('\r', '\n').strip('\n')
+                path = st_path or (out + ('.st' if hits == 0 else '.%d.st' % hits))
+                with open(path, 'w', encoding='utf-8', newline='\n') as f:
+                    f.write(t)
+                if '--raw' in argv:
+                    with open(path + '.raw', 'w', encoding='utf-8', newline='') as f:
+                        f.write(raw)
+                hits += 1
+                lines.append('EDITOR %r chars=%d lines=%d sha256=%s -> %s'
+                             % (title, len(t), t.count('\n') + 1,
+                                hashlib.sha256(t.encode('utf-8')).hexdigest(), path))
+                lines.append('  first=%r' % t.split('\n', 1)[0][:120])
+            if d < 18:
+                try:
+                    for k in c.GetChildren():
+                        stack.append((k, d + 1))
+                except Exception:
+                    pass
+        except Exception:
+            pass
+    if not hits:
+        lines.append('NO SyntaxEditor found (open an ST POU / FB definition first; '
+                     'a library POU needs 转到下层 — see ss_libsrc.py)')
+    n = dump(out, '# text pid=%d %r' % (pid, mw['title']), lines)
+    print('\n'.join(lines))
+    print('lines=%d -> %s' % (n, out))
+    return 0 if hits else 1
+
+
 def cmd_close(argv):
     """Close open editors by document name, or `--all` (the ones currently listed).
 
@@ -2093,7 +2183,7 @@ def cmd_diff(argv):
 CMDS = dict(scan=cmd_scan, panels=cmd_panels, menus=cmd_menus, ctx=cmd_ctx,
             editor=cmd_editor, diff=cmd_diff, tree=cmd_tree, treectx=cmd_treectx,
             treelabels=cmd_treelabels, treerows=cmd_treerows, open=cmd_open,
-            close=cmd_close)
+            close=cmd_close, text=cmd_text)
 
 
 def main():
