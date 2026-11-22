@@ -95,7 +95,7 @@ print(a != b, b != c)           # 两个 True 才算折叠/展开都生效
 | 条目 | 现状 | 下一步怎么测 |
 | --- | --- | --- |
 | 在工程树里新建 POU（`插入>程序`） | 未验证 | `ss.py menu <pid> 插入(I) 程序(P)` → `popups` 抓对话框 → 填名 → 确定 → `count` 校验 |
-| ST 编辑器读写 | **写入通道已排除**：`--pat` 实测 `textEditor`(`SyntaxEditor`) 只有 `Text` 模式、**没有 `Value`**，所以 `ValuePattern.SetValue` 不存在这条路（`openF.txt`）；写仍走"点它 + 剪贴板/键盘" | 剩一个问题：`TextPattern.DocumentRange.GetText(-1)` 能不能**读出**整段代码——用只读的 `ss_uimap.py open … --pat` 打开一个 ST POU，对 `textEditor` 取 `GetTextPattern()` 读一次即可，不要写 |
+| ST 编辑器读写 | **读：已验证（2026-11-20）**——`textEditor` 的 `TextPattern` 能读出**整段** ST 源码：实测打开一个 FB 的 ST 页取 `TextPattern` 提取全文，与该 FB 的离线解密明文**逐字节一致（零归一化）**。**写：仍未测**——`Value` 模式不存在（见上），写仍只能走"点它 + 剪贴板/键盘" | 写入通道按既有路线（剪贴板粘贴 + 用 TextPattern 回读校验）在副本工程实测；换版本后重跑一次全文读取确认仍逐字节一致 |
 | POU 变量表整张表的可读性 | **已验证**：`open … --expand` 后 `DefaultGroupDataGrid` 的行/格/空值全可读（[control-tree §16.7](control-tree.md)） | 需要覆盖"输入/输出""外部""返回值"三个未选中的页签时，得先切 `TabItem`（`SelectionItem.Select()` 未测），再重走 |
 | 梯形图/功能块图画布内元件 | 已确认不可枚举 | 只做截图 + 坐标，或在副本上离线改 `.smc2` |
 | 编译结果文本读取 | **已验证可全量读**（见 [control-tree §9](control-tree.md#9-输出--编译面板)、`scripts/ss_build.py`） | — |

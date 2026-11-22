@@ -1,14 +1,14 @@
 # sysmac-studio-control Skill
 
-作者 hoverwu ｜ 版本 0.12.1 ｜ 非官方
+作者 hoverwu ｜ 版本 0.12.11 ｜ 非官方
 
-用 Windows UI Automation 读取与操作欧姆龙 Sysmac Studio 的 Agent Skill：工程树导航、编辑器测绘、变量/轴/EtherCAT 组态、在已有库 FB 上按轴开关加功能并重建/换 `.slr` 库、编译错误读取、真落盘保存与归档校验。主入口是 [SKILL.md](SKILL.md)，实测细节在 [references/](references/)，命令行驱动在 [scripts/](scripts/)，EtherCAT 批量插入计划示例在 [examples/](examples/)。
+用 Windows UI Automation 读取与操作欧姆龙 Sysmac Studio 的 Agent Skill：工程树导航、编辑器测绘、变量/轴/EtherCAT 组态、在已有库 FB 上按轴开关加功能并重建/换 `.slr` 库、读被引用库 POU 的 ST 源码（工具箱分组 → 右键实例 → `转到下层` → `SyntaxEditor` 全文）、编译错误读取、真落盘保存与归档校验。主入口是 [SKILL.md](SKILL.md)，实测细节在 [references/](references/)，命令行驱动在 [scripts/](scripts/)，EtherCAT 批量插入计划示例在 [examples/](examples/)。
 
 ## 目录
 
 ```text
 SKILL.md          Agent 主入口：能力、边界、配方、安全红线
-scripts/          命令行脚本（ss.py / ss_uimap.py / ss_ecat_*.py / ss_save.py / ss_verify.py 等）
+scripts/          命令行脚本（ss.py / ss_uimap.py / ss_libtype.py / ss_libsrc.py / ss_libref.py / ss_ecat_*.py / ss_save.py / ss_verify.py 等）
 tests/            无 Sysmac 依赖的单元测试（注入假 UI 对象，标准库 unittest）
 references/       控件树、坑清单、架构、项目文件、回归清单
 examples/         通用 EtherCAT 计划示例（plan.sample.json）

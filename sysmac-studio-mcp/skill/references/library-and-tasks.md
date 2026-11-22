@@ -67,6 +67,9 @@
 校验成功：
 
 - 立即判据（2026-10-31 实测）：回到 `库索引` 后，表格里出现**库文件名**（如 `MyLibV1.0.0_20250101`）或 `DataItem/ListItem` 行。表格行不一定暴露成 DataItem，但文件名文字一定在对话框的某个 `Text` 里 → **按"文件名子串出现"判成功**，别只数行。
+  - **2026-11-21 更正（V1.68）**：这条**在本版本不成立**。实测该表格根是 `CustomControl class='LibraryDataGrid'`，**既没有 `DataItem/ListItem` 子节点，也没有承载行文字的 `Text` 子节点**——UIA 下这个表就是个空壳（dump 出来只有 `itemScrollViewer` + `LibraryDataGrid` 两行）。所以**不要**用"文件名出现"当判据，改用下面两条之一：
+    1. **离线判据（最可靠）**：`ss_libref.py <pid> <out> list <工程.smc2>` —— 直接读归档里 `ReferredLibrary/LibraryModel` 的 `Name`/`Version`/`LibraryId`/`LibraryFilePath`/`IsSource`/`IsDisableSourceDisplay`。需要先把工程保存一次（或本来就有磁盘文件），不需要 Sysmac 在跑。
+    2. **界面旁证**：打开一个程序编辑器后，工具箱出现分组按钮 ` <库名> ( <版本> )`（`AutomationId='groupToggle'`）——这是"库真的挂上了"的可见证据，且能进一步列出 POU（见 §8）。
 - 导出后：digest 脚本看 `.oem` 里 `ReferredLibraries` 实体 = 1，且库工程的 `Library` 实体还在。
 - 右侧工具箱出现库命名空间（如 `MyLibV1.0.0…`）也是旁证。
 
@@ -238,3 +241,119 @@ python $S/ss_save.py <目标pid> --menu --file <目标.smc2>   # 文件(F)>保�
 - 库源 `.smc2` 若仍开在某个 Sysmac 实例里，它持有**改之前**的陈旧内存副本：从它保存/创建库会把磁盘补丁打回原形
   （[pitfalls §80](pitfalls.md)）。离线改完磁盘后，让该实例**从磁盘重开**或**不保存地关闭**，保证磁盘是唯一事实源。
 - 被 Sysmac 开着的 `.smc2`/`.slr` **写锁定**，离线 `os.replace` 会 `WinError 5`；先关工程或改副本（§80）。
+
+
+## 8. 看被引用库里的 POU 源码（含"源码可见"库的验收，2026-11-21 实测）
+
+引用库（`.slr`）里的 POU **不在工程树里**，`ss_uimap.py open <树路径>` 够不着；库索引那张表又不暴露行（§2 更正）。
+唯一稳定通道是"工具箱 → 右键实例 → 转到下层"：
+
+```
+1) 打开任一程序编辑器（梯形图即可）        ss_uimap.py open <pid> <out> 1.0.0.0.0
+2) 工具箱出现库分组 ` <库名> ( <版本> )`    AutomationId='groupToggle'
+   展开 → 列出该库全部 POU                  ss_libsrc.py <pid> <out> toolbox
+3) 在梯形图上对**该库 FB 的实例**右键 → 菜单「转到下层」（Ctrl+Shift+L）
+                                            ss_libsrc.py <pid> <out> goto <x> <y>
+   菜单项按 Name Invoke（不是按坐标点菜单位置）
+4) 打开 `<FB名> - <实例名>` 文档窗口
+     Pane(DocumentWindow) → Custom(StructuredTextView) → Custom(SyntaxEditorView)
+       → Text(AutomationId='textEditor', class='SyntaxEditor')
+5) 取全文                                  ss_libsrc.py <pid> <out> text
+   TextPattern.DocumentRange.GetText(-1)
+```
+
+判据与实测数字：
+
+- `goto` 成功 = 出现新 `DocumentWindow`（脚本日志 `new_docs=[...]`）；没有就是坐标没落在实例上，或菜单项名变了
+  （脚本会把抓到的菜单项全列出来，照着改 `--item`）。
+- `text` 输出 = `<out>.st`（单编辑器）或 `<out>.<n>.st`（多编辑器），日志给 `chars/lines/sha256/首末行`。
+  实测一个 FB：**整段源码**，与离线明文**逐字节一致**（只做 CRLF→LF 归一化）。
+- `toolbox` 默认会自动展开折叠分组；**折叠分组不向 UIA 暴露子项**，`--no-expand` 时只拿到分组名。
+- `text` 只对 ST 页有效：梯形图/变量表没有 `textEditor`，脚本会返回 1 并写明原因，不是故障。
+
+保存后怎么离线复核"库确实是源可见"（不依赖 UI，直接读 `.smc2`）：
+
+```python
+# 1) 库引用旗标：LibraryModel 下是【元素文本】形式，不是属性
+'<IsSource>true</IsSource>' in xml and '<IsDisableSourceDisplay>false</IsDisableSourceDisplay>' in xml
+# 2) 源码已落盘：数 <StructuredTextModel> 实体，逐个取 <Text> 与离线明文比 sha256
+# 3) 别被同名节点骗：<BuildOption> 下也有一个 LibraryModel（工程自身，Name=工程名、路径空），
+#    它的 IsDisableSourceDisplay=true 属正常，不是"没改成功"
+```
+
+一次完整的"源可见"验收（2026-11-21 实测，全程副本只读 + 不保存关闭）：
+
+| 项 | 实测值 |
+| --- | --- |
+| UI 全文 | 整段源码（行数与离线明文相同） |
+| 与离线明文 | 逐字节一致（仅 CRLF→LF） |
+| 工程内嵌 | 7 个 `StructuredTextModel`，最大者即该明文 |
+| 库旗标 | `<IsSource>true</IsSource>` + `<IsDisableSourceDisplay>false</IsDisableSourceDisplay>` |
+| 工程哈希 | 打开前/关闭后一致（未保存） |
+
+## 9. 判型：先跑 `ss_libtype.py`，别手数标签（2026-11-21 实测）
+
+判型是"解密 / 重建 / 编译体解析"三条路的分岔口，判错会把整条分析带偏。**先跑命令，再决定路线**：
+
+```bash
+python $S/ss_libtype.py "库.slr"              # 人读
+python $S/ss_libtype.py "工程.smc2" --json     # 机器读
+python $S/ss_libtype.py --selftest            # 11 项自检（含两个陷阱夹具）
+```
+
+输出长这样（真实文件）：
+
+```
+FILE    库.slr
+        entries=49
+TYPE    AES_HIDDEN    IsSource=true + IsDisableSourceDisplay=true + 有密文
+FLAGS   IsSource=true  IsDisableSourceDisplay=true  IsBackwardCompatibleNoSource=(absent)  Password=(empty)
+        model: Name='<库名>' Version=1.0.0 role=entity
+BODY    EncryptedFile=7 (raw=0)  BuiltLibraryFile=0  StructuredTextModel=7  cipher=7 plain=0 built=0 empty=0
+UNICODE Utf8=7
+NEXT    常规库+禁显：走无源库解密流程 §4 解密（key/IV 由 EncryptionLock 自包含推导）
+WARN    ESCAPING: 原始 XML 里 <EncryptedFile> 计数=0，html.unescape 后=7 —— 直接数原始 XML 会误判…
+```
+
+### 9.1 五个结论型别
+
+| TYPE | 条件 | 走哪条路 |
+| --- | --- | --- |
+| `AES_HIDDEN` | `IsSource=true` + `Disable=true` + 有密文 | 解密（decrypt §4）；要交付可读库再走 rebuild |
+| `AES_VISIBLE` | `IsSource=true` + `Disable=false` + **仍有密文** | **不用解**：Sysmac 自己解；但密文+钥匙都在库里，分发等于公开源码 |
+| `NO_SOURCE` | `IsSource=false` 或 `NoSource=true`（通常伴 `BuiltLibraryFile`） | AES 失效 → 编译体解析；有明文参照 → rebuild 路径 c |
+| `PLAIN_VISIBLE` | 无密文 + 明文 `<Text>` | 已是源可见库，直接导出/对照 |
+| `UNKNOWN` | 没找到模型或旗标缺失 | 不猜，记录样本 |
+
+### 9.2 两个必须知道的陷阱
+
+1. **`<EncryptedFile>` 是 HTML 转义的**（实体 XML 里存成 `&lt;EncryptedFile&gt;`）。
+   对原始 XML 数 `<EncryptedFile>` 得 **0** ⇒ 会误判"这个库没有加密源码"。
+   工具内部先 `html.unescape`，并把 **raw 与 unescaped 两个计数一起打印**；两者不等时抛 `ESCAPING` 警告。
+   **看到 `EncryptedFile=7 (raw=0)` 就是这条陷阱的现场。**
+2. **`.smc2` 里有两个 `LibraryModel`**：`ReferredLibraries>ReferredLibrary` 下的是被引用库；
+   `BuildOption` 下的是**工程自身**的构建选项（`Name`=工程名，`IsDisableSourceDisplay=true` 属正常）。
+   拿错一个会把"源可见"判成"禁显"。工具按祖先链剔除 `BuildOption`，两者旗标不一致时抛警告。
+
+### 9.3 顺带结论：有密文 ≠ 源码被隐藏
+
+改旗标重建库样本`IsDisableSourceDisplay=false`，但 7 个密文 Body 与原库**逐字节相同**：
+
+```
+SAME  <lock 指纹>   (×7，全部 SAME)
+```
+
+即"改旗标"只放开显示，密文和钥匙都还在，Sysmac 现解现显示。所以：
+
+- 想**自己看**、保持库形态 → 改旗标即可（`AES_VISIBLE`），体积几乎不变；
+- 想**真交付源码**、不带走密文 → 必须走明文装配（`PLAIN_VISIBLE`），体积会明显下降（本例约降到三分之一）。
+
+### 9.4 验收（五个真实样本）
+
+| 样本 | TYPE | 关键计数 |
+| --- | --- | --- |
+| 常规库样本 | `AES_HIDDEN` | `EncryptedFile=7 (raw=0)` / `STM=7` |
+| 无源码库样本 | `NO_SOURCE` | `0` / `BuiltLibraryFile=8` |
+| 改旗标重建库样本 | `AES_VISIBLE` | `7 (raw=0)` / `Disable=false` |
+| 无源码工程样本 | `NO_SOURCE` | `0` / `8` / `role=referred` |
+| 明文装配工程样本 | `PLAIN_VISIBLE` | `0` / `STM=7` / `plain=7` |

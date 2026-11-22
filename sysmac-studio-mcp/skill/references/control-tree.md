@@ -751,6 +751,40 @@ Custom cls='StructuredTextView' | 'LadderProgramView'        ← 折叠的那条
 - `Custom cls='InstanceSelectorView'`（`off`，与代码区同矩形）：`Text '请选择一个监测实例。'` + `Button id='SelectButton'`（文案「选择」）+ `List id='InstanceListBox'`。**这是在线监视时选实例的面板，离线态恒 off**——将来做在线功能时它是入口，但现在别点（会牵扯在线状态，见 SKILL §7 红线 2）。
 - 判"POU 变量表可读"用 `id='DefaultGroupDataGrid'`；**全局变量页是 `GlobalNamespaceGroupDataGrid`**（§16.3）。两者都 `cls='CellEditor'`，列序前 6 列完全一样（名称/数据类型/初始值/分配到/保持/常量），差别只在**全局多一列 `网络公开`**（7→8 列）。**任何按列序取值的代码都必须先确认是哪一个 id**。
 
+### 16.8 被引用库的 FB 源码页（`转到下层`）与工具箱库分组（2026-11-21 实测）
+
+引用库（`.slr`）里的 POU **不在工程树里**，只能从"库 FB 的实例"往下钻。整条链实测如下：
+
+```
+Button| <库名> ( <版本> )|groupToggle|Button||kbd      ← 工具箱库分组（折叠时不暴露子项）
+Button|||Button|kbd                                                          ← 每个 POU 一行
+  Custom|||FunctionBlockToolboxControl|                                      ← FB（Function 是 FunctionToolboxControl）
+  Edit|textBox|TextBox
+    Text| <FB名>|TextBlock                                           ← POU 名（带前导空格）
+
+右键梯形图上的库 FB 实例 → MenuItem '转到下层'（Ctrl+Shift+L）→ 新 DocumentWindow：
+Pane|<FB名>||DocumentWindow|<FB名> - <实例名>|kbd
+  Custom|||StructuredTextView|(275,295 1385x632)
+    Group|||Expander|kbd                       ← 变量表折叠区（Button|HeaderSite → Text|变量）
+    Custom|||SyntaxEditorView|(275,322 1385x605)
+      Text||textEditor|SyntaxEditor|kbd        ← 全文在这里
+        Pane|Editor View|EditorView-Right|EditorView
+          Pane|||TextViewLayerStack
+          Pane|Editor Line Number Margin|EditorLineNumberMargin
+          ...
+```
+
+要点：
+
+- `SyntaxEditor` 的 `Name` 为空、`AutomationId` 恒为 `textEditor`、`class='SyntaxEditor'`，**只有 `Text` 模式**（无 `Value`）；
+  `TextPattern.DocumentRange.GetText(-1)` 一次拿到整段 ST（实测原始字符数与归一化后字符数不同，差异只在换行）。
+- 文档窗口 `Name` 是**短名**（`<FB名>`），完整标题在 `ClassName` 后面的 `DocumentWindow` 显示名里
+  （`<FB名> - <实例名>`）；`--title` 过滤按短名前缀匹配。
+- 梯形图里的 FB 实例**不在 UIA 树里**（编辑器只暴露外壳 + 变量表 + 语法编辑器），所以 `转到下层` 只能靠**坐标右键**；
+  但菜单项要**按 Name Invoke**，不要按坐标点——菜单位置随 DPI/布局变。
+- 工具箱分组按钮的 `AutomationId` 是 `groupToggle`；分组名形如 ` <库名> ( <版本> )`（**带前后空格**），
+  按 `in` 匹配而不是 `==`。
+
 ## 17. 轴设置表（WinForms）与轴 PDO 过程数据（2026-11-07 实测）
 
 > 被测：某运动控制工程（34 个 EtherCAT 从站 / 6 根轴），Sysmac V1.68 64bit；实测基线（1920×1080 最大化、125% 缩放），换环境先重测几何。
