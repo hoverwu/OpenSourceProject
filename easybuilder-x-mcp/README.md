@@ -1,6 +1,6 @@
 # EasyBuilder X MCP + Skill
 
-作者 hoverwu · 版本 0.4.0（MCP 服务器 0.3.0，24 个工具）· 实测版本 EasyBuilder X V1.01.376s
+作者 hoverwu · 版本 0.5.0（MCP 服务器 0.3.0，24 个工具）· 实测版本 EasyBuilder X V1.01.376s
 
 用 Windows UIA 与坐标地图控制威纶通 / 威纶（WEINVIEW / Weintek）**EasyBuilder X**（EBX）HMI 组态软件，并提供画面 JSON 生成、校验、导入与验收工具。
 
@@ -15,10 +15,41 @@
 
 当前原生路线的硬边界：
 
-- `Text.text` / `Button.text` 只接受字符串库引用，不接受普通内联文字；归档不能嵌入字符串库，快速样例使用 `--omit-text`。
-- 缺失 `Variable://Project/<tag>` 会保留占位但阻塞编译；必须先补齐真实变量。
-- `tags[].address` 当前不会改写原生变量绑定，批量改地址仍需变量库或经实测的绑定转换。
+- `Text.text` / `Button.text` 只接受字符串库引用，不接受普通内联文字；归档不能嵌入字符串库。可先用 `--omit-text`，或先在目标工程经字符串表 CSV/XLSX 准备对应 ID。
+- 先在 EBX `工程文件 > 变量` 创建 Project 变量，再通过 `Variable://Project/<tag>` 绑定；已实测真实 Project 变量无未解析引用。缺失变量会保留占位并阻塞编译。
+- 导入返回 `all_ok=true` 不代表完整成功；转换器还会检查顶层/操作级 `success`、`unresolved_references` 与 `missing_references`。
+- `tags[].address` 不会改写原生绑定。批量改地址应操作变量库/设备标签，或替换 JSON tag 后重新导入；设备导出的 `Variable://[PLC]/GlobalVariables/<tag>` 原样回导会报 `index_references_are_missing`。
 - JS Resource 仅证明 `.js` 文件可导入；未找到 JS Object/Action 执行入口，不能把 EBPro JS SDK 能力当成本机 EBX 能力。
+
+## Changeset 与字符串引用
+
+文本属性接受以下 `displayString` 形式：
+
+```json
+[
+  "String://Project:ID[31]",
+  {"path":"<字符串库路径>","indexReference":31},
+  {"path":"<字符串库路径>","indexReferences":{"zh-CN":31}},
+  null
+]
+```
+
+修改既有控件文字时，使用规范实体路径 `画面名/元件名`：
+
+```json
+{
+  "schema_version": "1.4",
+  "method": "applyChangeset",
+  "params": {
+    "operations": [{
+      "type": "set_property",
+      "entity": "参数设定/标题",
+      "property": "text",
+      "value": "String://Project:ID[31]"
+    }]
+  }
+}
+```
 
 ## 内容
 

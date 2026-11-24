@@ -122,7 +122,7 @@ def export(screen, outpath):
             "author": "hoverwu",
             "exported_at": datetime.datetime.now().astimezone().isoformat(timespec="seconds"),
         },
-        "source_project": "PipeHeating_HMI.ebxprj",
+        "source_project": "Example.ebxprj",
         "target": {
             "software": "EasyBuilder X V1.01.376s",
             "model": "cMT3075XH",
@@ -133,7 +133,7 @@ def export(screen, outpath):
         "device": {
             "name": "PLC_NX502",
             "driver": "Omron EtherNet/IP (NJ/NX Series)",
-            "ip": "192.168.250.1",
+            "ip": "192.0.2.1",
             "addressing": "CIP 变量名（GlobalVariables）",
         },
         "screen": {

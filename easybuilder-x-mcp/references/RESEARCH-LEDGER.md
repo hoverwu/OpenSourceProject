@@ -1,6 +1,6 @@
 # EasyBuilder X 情报台账（已核实事实 + 来源）
 
-作者：hoverwu ｜ 版本：0.4.0 ｜ 建立：2026-11-06 ｜ 更新：2026-11-24 ｜ 采集方式：官方站点直取 + 官方手册 PDF 解析 + 官方安装包实测元数据 + 本机 UIA / 原生 Socket 实测
+作者：hoverwu ｜ 版本：0.5.0 ｜ 建立：2026-11-06 ｜ 更新：2026-11-25 ｜ 采集方式：官方站点直取 + 官方手册 PDF 解析 + 官方安装包实测元数据 + 本机 UIA / 原生 Socket 实测
 
 本文件只记录**已经核实**的事实。任何未实测的推断一律写在末尾并标注"未验证"。
 
@@ -176,7 +176,7 @@ Ribbon 选项卡：**文件 / 常用 / 工程文件 / 元件 / 资料/历史 / I
 
 ### 10.1 本次交付（管道加热 HMI）
 
-- 工程：`work/PipeHeating_HMI.ebxprj`（备份 `work/PipeHeating_HMI.backup_before_reorder.ebxprj`），编译产物 `work/PipeHeating_HMI.ebxobj`（81,500,378 B，2026-11-07 17:28）。
+- 示例 HMI 工程：4 页 / 105 元件 / 12 个导航键；`.ebxobj` 81,500,378 B（2026-11-07 17:28）。工程文件与运行产物不随发布包分发。
 - 画面：主监控 29 / 参数设定 18 / 手动维护 21 / 报警与趋势 37 元件，全部绑定 PLC 全局变量；每页右下 3 个导航键（共 12 个）。
 - 模拟验证：启动页 报警与趋势 → 主监控 → 参数设定 → 手动维护 → 报警与趋势 逐页点击通过（out/sim_tour_*.png）。
 
@@ -234,4 +234,16 @@ Ribbon 选项卡：**文件 / 常用 / 工程文件 / 元件 / 资料/历史 / I
 | 原生 Socket/转换器与 MCP 模态框共 12 项离线测试 + 验证器 3 项通过 | `python -m unittest discover -s tools -p "test_ebx_*.py"` 等 |
 | `ebx_open` 先处理已有模态框再激活主窗；丢弃按钮前缀匹配支持 `否(N) Alt+N` | `tools/test_ebx_mcp_open.py` |
 
-**未验证**：普通文字与字符串库自动创建；真实变量创建/绑定与地址批量改写；任意复杂画面的完整逆向导出；报警/趋势/动画/宏保真度；其他 EBX 版本/机器；JS Object/Action、require、PLC 读写与 Canvas。
+### 13.1 字符串、Changeset 与真实变量绑定（2026-11-25）
+
+| 事实 | 证据 |
+| --- | --- |
+| `displayString` 接受 `String://Project:ID[n]`、`{path,indexReference}`、`{path,indexReferences:{...}}` 与 `null`；普通内联字符串被拒 | 实时 Schema 与逐形式导入结果 |
+| 原生归档 body 仅 screens/windows/diagnostics，不能携带字符串库；须先在目标工程用字符串表 CSV/XLSX 准备 ID | 原生 Schema 与字符串表入口实测 |
+| `set_property` envelope 为 `schema_version/method/params.operations`；`entity` 用 `画面名/元件名`，不是 `Object://Screen:...` | `out/ai_socket/set_text_existing.json` |
+| 已有 Project 变量 `rTempMeas` 可通过 `Variable://Project/rTempMeas` 成功绑定 | `out/ai_socket/project_variable_binding.json` |
+| `all_ok=true` 可同时有未解析引用；完整成功还须检查顶层/操作级 success、unresolved_references 与 missing_references | `out/ai_socket/unresolved_import_shape.json` |
+| 设备导出的 `Variable://[PLC_NX502]/GlobalVariables/<tag>` 原样改名回导报 `index_references_are_missing` | `out/ai_socket/device_exact_roundtrip.json` |
+| 转换器新增严格导入成功判定，20 项 Socket/转换/验证/MCP 离线测试通过 | `tools/ebx_native_codegen.py`、`tools/test_ebx_native_codegen.py` |
+
+**未验证**：字符串库/Project 变量自动创建；设备 URI 直接回导与 `tags[].address` 批量改写；任意复杂画面的完整逆向导出；报警/趋势/动画/宏保真度；其他 EBX 版本/机器；JS Object/Action、require、PLC 读写与 Canvas。

@@ -48,12 +48,63 @@ class NativeCodegenTests(unittest.TestCase):
         numeric = archive["body"]["screens"][0]["objects"][3]
         self.assertEqual(numeric["properties"]["readValue"], "Variable://Project/rTempMeas")
 
+    def test_explicit_variable_uri_is_preserved(self):
+        changed = copy.deepcopy(self.data)
+        uri = "Variable://[PLC_NX502]/GlobalVariables/rTempMeas"
+        changed["screen"]["elements"][3]["tag"] = uri
+        archive = codegen.convert(changed, screens={"参数设定"})
+        numeric = archive["body"]["screens"][0]["objects"][3]
+        self.assertEqual(numeric["properties"]["readValue"], uri)
+
+    def test_device_variable_scope_builds_device_uri(self):
+        archive = codegen.convert(
+            self.data, screens={"参数设定"}, variable_scope="[PLC_NX502]/GlobalVariables")
+        numeric = archive["body"]["screens"][0]["objects"][3]
+        self.assertEqual(
+            numeric["properties"]["readValue"],
+            "Variable://[PLC_NX502]/GlobalVariables/rTempMeas")
+
+    def test_string_reference_is_preserved(self):
+        changed = copy.deepcopy(self.data)
+        changed["screen"]["elements"][0]["text"] = "String://Project:ID[31]"
+        archive = codegen.convert(changed, screens={"参数设定"})
+        text = archive["body"]["screens"][0]["objects"][0]
+        self.assertEqual(text["properties"]["text"], "String://Project:ID[31]")
+
     def test_omit_text_and_screen_rename(self):
         archive = codegen.convert(self.data, "导入测试", screens={"参数设定"}, omit_text=True)
         screen = archive["body"]["screens"][0]
         self.assertEqual(screen["name"], "导入测试")
         for obj in screen["objects"]:
             self.assertNotIn("text", obj["properties"])
+
+    def test_import_success_requires_all_operations_and_bindings(self):
+        complete = {
+            "success": True,
+            "changeset_result": {
+                "all_ok": True,
+                "per_operation": [{"success": True, "unresolved_references": []}],
+            },
+        }
+        self.assertTrue(codegen.import_succeeded(complete))
+
+        top_unresolved = copy.deepcopy(complete)
+        top_unresolved["unresolved_references"] = [{"path": "Variable://Project/missing"}]
+        self.assertFalse(codegen.import_succeeded(top_unresolved))
+
+        operation_unresolved = copy.deepcopy(complete)
+        operation_unresolved["changeset_result"]["per_operation"][0]["unresolved_references"] = [
+            {"path": "Variable://Project/missing"}
+        ]
+        self.assertFalse(codegen.import_succeeded(operation_unresolved))
+
+        failed_operation = copy.deepcopy(complete)
+        failed_operation["changeset_result"]["per_operation"][0]["success"] = False
+        self.assertFalse(codegen.import_succeeded(failed_operation))
+
+        failed_changeset = copy.deepcopy(complete)
+        failed_changeset["changeset_result"]["all_ok"] = False
+        self.assertFalse(codegen.import_succeeded(failed_changeset))
 
     def test_verify_readback_ignores_default_events(self):
         archive = codegen.convert(self.data, screens={"参数设定"}, omit_text=True)

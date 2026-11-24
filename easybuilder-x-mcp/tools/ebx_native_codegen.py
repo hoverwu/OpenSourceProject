@@ -18,6 +18,8 @@ TYPE_MAP = {
 
 
 def variable_reference(tag, variable_scope):
+    if tag.startswith("Variable://"):
+        return tag
     return "Variable://%s/%s" % (variable_scope, tag)
 
 
@@ -128,6 +130,22 @@ def verify_readback(readback, archive):
     }
 
 
+def import_succeeded(imported):
+    if not imported.get("success", False):
+        return False
+    changeset = imported.get("changeset_result", imported)
+    if not changeset.get("all_ok", False):
+        return False
+    if imported.get("unresolved_references") or changeset.get("unresolved_references"):
+        return False
+    if changeset.get("missing_references"):
+        return False
+    return all(
+        operation.get("success", False) and not operation.get("unresolved_references")
+        for operation in changeset.get("per_operation", [])
+    )
+
+
 def write_json(path, data):
     with open(path, "w", encoding="utf-8") as f:
         json.dump(data, f, ensure_ascii=False, indent=2)
@@ -189,8 +207,7 @@ def main():
     write_json(os.path.join(args.evidence_dir, "native_codegen_evidence.json"), evidence)
     write_json(os.path.join(args.evidence_dir, "native_codegen_readback.json"), readback)
     write_json(os.path.join(args.evidence_dir, "native_codegen_export.json"), exported)
-    changeset = imported.get("changeset_result", imported)
-    import_ok = imported.get("success", False) and changeset.get("all_ok", False)
+    import_ok = import_succeeded(imported)
     print(json.dumps(evidence, ensure_ascii=False, indent=2))
     return 0 if verification["ok"] and import_ok else 1
 

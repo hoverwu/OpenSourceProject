@@ -1,8 +1,8 @@
 # EasyBuilder X（威纶通）MCP 控制方案
 
-作者：hoverwu ｜ 版本：1.5.0 ｜ 建立：2026-11-06 ｜ 更新：2026-11-24 ｜ 依据：`RESEARCH-LEDGER.md` 与 `EASYBUILDERX-UIA-AGENT-GUIDE.md`（v0.2.0）
+作者：hoverwu ｜ 版本：1.6.0 ｜ 建立：2026-11-06 ｜ 更新：2026-11-25 ｜ 依据：`RESEARCH-LEDGER.md` 与 `EASYBUILDERX-UIA-AGENT-GUIDE.md`（v0.2.1）
 
-> 本文所有"已验证"条目均于 2026-11-06/07/24 在 EasyBuilder X V1.01.376s（默认装在 `%ProgramFiles%\EasyBuilderX`）上跑通；"未验证"条目见 §8，不得当作结论引用。
+> 本文所有"已验证"条目均于 2026-11-06/07/24/25 在 EasyBuilder X V1.01.376s 上跑通；默认安装路径以 `%ProgramFiles%\EasyBuilderX` 表示。
 
 ## 1. 结论先行
 
@@ -158,7 +158,7 @@ UIA 读机型卡（`cMT3075XH` 默认）→ 坐标点"创建"（窗口内 1645,8
 - 画布内容完全不暴露，元件选中/拖动只能坐标化；高 DPI 或 Ribbon 折叠时需重新采样坐标。
 - 机型/系列/方向的非默认选择、画布拖动/多选/对齐、未保存工程的新建确认分支未验证。
 - **公开稳定页面级 JSON API 未成立**：打开对话框只认 `.ebxprj/.ebxobj`；官方结构化交换仅字符串表 CSV/XLSX、宏 `.ebm`、审计 CSV、图片。UIA 工作桥见 §11；本机技术预览见 §12。
-- 原生预览的内联文字、字符串库自动创建、变量创建/真实绑定与地址批量修改尚未解决；未解析变量占位会阻塞编译。
+- 原生预览的内联文字与字符串库自动创建尚未解决；Project 变量需先在 EBX 创建，缺失变量占位会阻塞编译。设备 URI 原样回导失败，`tags[].address` 批量改写也不可用；改地址应修改变量库/设备标签或替换 JSON tag 后重新导入。
 - JS Resource 仅证明文件可导入，未找到 JS Object/Action 执行入口；EBPro JS SDK 能力不能当作 EBX 实测。
 - 本方案所有实测基于 cMT3075XH / 1024x600 / 中文界面的单机环境；原生预览仅验证 V1.01.376s。
 
@@ -215,18 +215,20 @@ python tools\ebx_act.py shot out\shot.png
 
 实测（2026-11-07）：4 行画面、`current_screen="主监控"`、`screen_open` `ok`、元件 7 行；导入 `limit=1,no_bind,no_nav,no_save` → `finished=true, done=1/40, errors=[]`，随后删除临时画面并保存，工程仍 4 页。修复点：`_prop_value` 遍历深度 16→30 才能读到 depth >18 的输入框。
 
-## 12. 原生 Screen View JSON 与 AI 制图（2026-11-24 追加）
+## 12. 原生 Screen View JSON 与 AI 制图（2026-11-24 至 25 实测）
 
 - **入口**：用户明确授权后创建 `technical_preview` 与 `enable_ebx_socket_server` 标记并重启 EBX；仅本机 V1.01.376s 验证，不宣称官方稳定支持。
 - **客户端**：`tools/ebx_ai_socket.py` 从 `%APPDATA%/Weintek/EasyBuilder X/ai-sockets/<pid>.json` 发现 loopback 实例；NDJSON，Socket 协议 `"1.4"`，归档 Schema `"1.1"`。
 - **转换/导入**：`tools/ebx_native_codegen.py` 把 `ebx-screen/1.0` 的 Text/Numeric/Lamp/Button 转为原生对象，支持变量引用与切屏任务，并执行冲突检查、导入、读回、导出、诊断。
 - **实测**：8/8 控件导入，全流程约 0.5 s；无绑定页编译 7.1 s；离线模拟显示生成页，进入该页和点击生成按钮跳转“参数设定”均成功。
-- **文字**：原生 `displayString` 不接受普通内联文字；归档不能嵌入字符串库。当前可复现成功样例使用 `--omit-text`。
-- **变量/地址**：缺失变量可保留占位但会阻塞编译；`tags[].address` 不会改写 `Variable://Project/<tag>` 绑定。必须先解决变量库/绑定转换，再交付批量改地址。
+- **快速工作流**：先在 EBX `工程文件 > 变量` 创建 Project 变量，必要时经字符串表 CSV/XLSX 准备字符串 ID；再生成紧凑 JSON、导入并核验冲突/回读/未解析引用；最后编译与离线模拟。原生归档不能创建变量库或字符串库。
+- **文字**：`displayString` 接受 `String://Project:ID[n]`、带 `path` 与 `indexReference` 或单个 `indexReferences` 的对象，或 `null`；普通内联文字被拒。已用既有字符串引用成功执行 `set_property`。
+- **Changeset**：`{"schema_version":"1.4","method":"applyChangeset","params":{"operations":[{"type":"set_property","entity":"画面名/元件名","property":"text","value":"String://Project:ID[31]"}]}}`。
+- **变量/地址**：真实 Project 变量 `rTempMeas` 经 `Variable://Project/rTempMeas` 绑定成功且无未解析引用。`all_ok=true` 只表示操作结构成功，转换器现在同时检查顶层/操作级 `success`、`unresolved_references` 与 `missing_references`。`tags[].address` 不改绑定；设备导出的 `Variable://[PLC]/GlobalVariables/<tag>` 原样回报 `index_references_are_missing`。
 - **模板/复用**：原生支持 custom/composite model 的 Changeset 与导入导出方法，但跨工程模板复用保真度尚未验收。
 - **JS**：Resource 文件可导入；未找到运行时/设计时执行入口，不能实现当前 AI 动态绘图目标。
-- **证据**：`out/ai_socket/nobind_import/`、`out/ai_socket/offline_sim_c2.png`、`out/ai_socket/offline_sim_params_from_c2.png`。
-- **测试**：`python -m unittest discover -s tools -p "test_ebx_*.py"`（12 项）与验证器 3 项均通过；覆盖模态“否(N) Alt+N”匹配与 `ebx_open` 先处理模态框。
+- **证据**：`out/ai_socket/nobind_import/`、`out/ai_socket/offline_sim_c2.png`、`out/ai_socket/offline_sim_params_from_c2.png`、`out/ai_socket/project_variable_binding.json`、`out/ai_socket/device_exact_roundtrip.json`。
+- **测试**：`python -m unittest discover -s tools -p "test_ebx_*.py"` 与验证器测试共 20 项通过；覆盖预览协议、转换、未解析引用判定、验证器空地址与 MCP 模态框处理。
 
 ## 13. 更新记录
 
@@ -238,3 +240,4 @@ python tools\ebx_act.py shot out\shot.png
 | 2026-11-07 | 1.3.0 | 新增 §11 页面 JSON 迁移：`ebx-screen/1.0` schema、导入器实现与 40/40 实测；记录 HWND_TOPMOST 压窗、弹层需标题栏原生激活、任务菜单异步轮询、任务落盘需 ValuePattern 复核四个坑 |
 | 2026-11-07 | 1.4.0 | MCP v0.2.0（24 工具）：§11.1 页面级通道 `screen_list/screen_open/screen_elements/uia_dump/import_screen_json/import_status`；修 `_prop_value` 深度；补 UIA 树模型、对话框三宿主、元件 dock 无 TabControl、文档页签自绘、NO_PROXY `[::1]` 与双进程说明 |
 | 2026-11-24 | 1.5.0 | 新增 §12 原生 Screen View / AI Socket 技术预览；修正“编译中”误判与 `ebx_open` 模态框处理；记录 8 控件导入、编译与离线导航验收、文字/变量/地址/JS 边界及 12 项回归测试 |
+| 2026-11-25 | 1.6.0 | 验证真实 Project 变量绑定、字符串 `displayString` 与 `set_property`；记录设备 URI 原样回导失败；导入判定增加未解析引用检查；20 项回归测试通过 |

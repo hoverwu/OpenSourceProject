@@ -1,6 +1,6 @@
 # EasyBuilder X V1.01.376s（威纶通）— UIA 操控知识库（给 Agent 读）
 
-作者：hoverwu ｜ 版本：0.2.0 ｜ 建立：2026-11-06 ｜ 更新：2026-11-24 ｜ 适用：EasyBuilder X V1.01.376s（build 2026.10.14，WEINVIEW 版），默认安装位置 `%ProgramFiles%\EasyBuilderX\EasyBuilderX.exe`（可用环境变量 `EBX_EXE` 覆盖）
+作者：hoverwu ｜ 版本：0.2.1 ｜ 建立：2026-11-06 ｜ 更新：2026-11-25 ｜ 适用：EasyBuilder X V1.01.376s（build 2026.10.14，WEINVIEW 版），默认安装位置 `%ProgramFiles%\EasyBuilderX\EasyBuilderX.exe`（可用环境变量 `EBX_EXE` 覆盖）
 
 本文只写"怎么读、怎么点、哪里会失败"。所有坐标、AutomationId、尺寸均为本机实测；未实测的推断单独标注"未验证"，不得当结论用。
 
@@ -15,7 +15,7 @@
 3. **坐标是窗口内坐标。** 屏幕坐标 = 窗口内坐标 + 主窗 `BoundingRectangle` 左上角。窗口每次启动位置都可能不同（实测出现过 `(79,34)` 与 `(96,18)`），必须每次现读，禁止硬编码屏幕坐标。
 4. **对话框不在主窗 UIA 子树里。** 保存/打开等 `#32770` 必须 `EnumWindows` 后 `ControlFromHandle`。
 5. **画布内容不暴露。** 元件放置、选中、拖动只能坐标化；右侧属性面板可 UIA 语义操作。
-6. **它没有任何编程接口。** 无 COM/SDK/插件/工程文件 CLI；`.ebxprj` 是加密二进制容器，不能离线生成或打补丁。UIA 是唯一通用入口。
+6. **没有公开稳定的编程接口。** 无 COM/SDK/插件/工程文件 CLI；`.ebxprj` 是加密二进制容器，不能离线生成或打补丁。UIA 是唯一通用入口；另有一个门控的本机技术预览 Socket，见 §10.7，不能当官方承诺。
 
 ---
 
@@ -490,7 +490,7 @@ Root
 - 4 页 × 3 键，右对齐 y=548 / h=38 / w=140 / x=520,672,824，标签与目标画面同名，每页不含自身。
 - 报警与趋势页底部指示灯占到 y=574，左对齐会压灯，因此统一右对齐。
 
-### 10.7 原生 Screen View / AI Socket 技术预览（2026-11-24 实测）
+### 10.7 原生 Screen View / AI Socket 技术预览（2026-11-24 至 25 实测）
 
 **定位**：这不是官方公开 API，而是 EBX V1.01.376s 二进制内受 `technical_preview` 与 `enable_ebx_socket_server` 控制的本机功能。两个零字节标记仅在用户明确授权后创建并重启 EBX；目标机或升级后必须重新验证。
 
@@ -512,23 +512,51 @@ python tools\ebx_native_codegen.py examples\C2_Native_Sample.screen.json --scree
 python tools\ebx_native_codegen.py examples\C2_Native_Sample.screen.json --screens 参数设定 --omit-text --import --evidence-dir out\C2_import
 ```
 
-- `ebx-screen/1.0` → Text/Numeric/Lamp/Button；`x/y/w/h` 原样转换；Numeric/Lamp 输出 `Variable://Project/<tag>`。
+- `ebx-screen/1.0` → Text/Numeric/Lamp/Button；`x/y/w/h` 原样转换；Numeric/Lamp 默认输出 `Variable://Project/<tag>`。显式 `Variable://...` 原样透传，`--variable-scope` 可指定其它作用域。
 - Button 切屏事件：`Method://<system>.changeScreen`，target 为 `Object://Screen:<画面名>`。
-- `applyChangeset` 的 `set_event` 实体路径必须含画面名，例如 `报警与趋势/nav_主监控`。
+- `applyChangeset` 的实体路径是规范 EBX 路径，不是 `Object://...`。已验证 envelope：
+
+  ```json
+  {
+    "schema_version": "1.4",
+    "method": "applyChangeset",
+    "params": {
+      "operations": [{
+        "type": "set_property",
+        "entity": "画面名/元件名",
+        "property": "text",
+        "value": "String://Project:ID[31]"
+      }]
+    }
+  }
+  ```
+
+- `set_property` 必须同时给 `type/entity/property/value`；`set_event` 实体路径同样含画面名，例如 `报警与趋势/nav_主监控`。
+- 导入成功判定不能只看 `all_ok`。`tools/ebx_native_codegen.py:import_succeeded` 还检查顶层 `success`、每个操作的 `success`、顶层/操作级 `unresolved_references` 与 `missing_references`；回读只比较显式提交事件，因为 EBX 会补默认空事件。
 - `ebx_open` 先处理已存在的保存确认框，再激活主窗；丢弃按钮使用前缀匹配，支持 `否(N) Alt+N`。
-- 导入结果必须同时检查顶层 `success` 与嵌套 `changeset_result.all_ok`；回读只比较显式提交事件，因为 EBX 会补默认空事件。
+
+**文字与字符串库（2026-11-25 实测）**：
+
+- `Text.text` / `Button.text` 接受 `displayString`：匹配 `^String://.+:ID\[[0-9]+\]$` 的字符串、含 `path` 且带 `indexReference` 或恰好一个 `indexReferences` 映射的对象，或 `null`。普通内联文字被拒。
+- 原生归档 `body` 只允许 `screens/windows/diagnostics`，不能携带或创建字符串库。目标工程必须先有对应 ID；字符串表 CSV/XLSX 是已证实的外部准备通道。
+- 已验证 `String://Project:ID[31]` 可通过导入和 `set_property` 绑定；转换器原样透传字符串引用。不知道目标 ID 时继续用 `--omit-text`，不要伪造内联文字。
+
+**变量绑定与地址修改（2026-11-25 实测）**：
+
+- 当前最可靠路线是先在 EBX `工程文件 > 变量` 中一次性建立 Project 变量，再让 JSON 绑定 `Variable://Project/<tag>`。本机新建 `rTempMeas` 后，原生导入返回 `unresolved_references=[]`，绑定成功。
+- 缺失 Project 变量仍可导入，但返回 `binding_target_not_found` + `preserved_root_placeholder=true`，并会阻塞编译。转换器现在把这种结果判为失败。
+- 既有设备变量的导出形式是 `Variable://[PLC_NX502]/GlobalVariables/<tag>`；把真实“报警与趋势”页原样改名回导时，设备 URI 在验证阶段报 `INVALID_REFERENCE: index_references_are_missing`。无括号、对象 path、Device 前缀等替代形式要么未解析，要么按数值字面量转换失败。因此当前不能宣称设备 URI 可直接跨工程回导。
+- `tags[].address` 只用于紧凑 JSON 的标签清单；转换器按 tag 名生成原生引用，改 address 不会改绑定。批量改地址应操作已建立的变量库/设备标签，或先在 JSON 中替换 tag 名再导入；不要误报为地址已改写。
 
 **性能与验收**：2 元件导出→改名/移动→冲突检查→导入→读回约 0.108 s；8 控件全流程约 0.5 s，干净导入约 1.7 s。无绑定生成页编译 7.1 s，离线模拟显示该页，进入页面与点击生成按钮跳转“参数设定”均成功。证据位于 `out/ai_socket/nobind_import/`、`offline_sim_c2.png`、`offline_sim_params_from_c2.png`。
 
 **编译判定**：`编译中` 是非模态进度窗，不是错误。`ebx_compile` 现等待 `.ebxobj` 更新、大小/mtime 稳定且进度窗关闭，并检查明确失败标记。有效基线 6.1 s；含 3 个不存在变量的生成页停滞且无新产物；移除相同 3 个绑定后成功，说明未解析变量占位会阻塞当前编译路线。
 
-**硬边界**：
+**模板与复杂控件边界**：
 
-- `Text.text` / `Button.text` 的 `displayString` 只接受字符串库引用、索引引用对象或 `null`；普通内联文字被拒，归档不能嵌入字符串库。成功样例使用 `--omit-text`，显示默认“文本”或空按钮文字。
-- 缺失 `Variable://Project/<tag>` 会保留 `preserved_root_placeholder=true`，但会阻塞编译。必须先补齐真实变量。
-- `tags[].address` 当前只用于紧凑 JSON 的标签清单；转换器按 tag 名生成原生引用，改 address 不会改绑定。地址批量修改仍需变量库操作或另一条经实测的绑定转换流程。
+- Switch 与 CustomWidget 已做结构回环；`CustomWidget.customModel="Object://CustomModel:自定义模板"` 可读回。基础 Text/Numeric/Lamp/Button 的生成路线已验证。
+- 自定义模板的克隆参数、实例覆盖与跨工程保真度尚未验收。既有“报警与趋势”导出实际只含 Text/Lamp/Numeric/Button，不能据此宣称 AlarmDisplay/TrendDisplay/动画/宏保真。
 - JS Resource 仅证明 `.js` 文件可导入；未找到 JS Object/Action 执行入口，不能把 EBPro SDK 的 Canvas/require/PLC 文档当成本机能力。
-- 任意复杂页面的完整逆向导出、文字库、变量库、报警/趋势/动画/宏保真度均未成立。
 
 **回归测试**：
 
@@ -551,5 +579,6 @@ python -m unittest discover -s tools -p "test_validate_screen_json.py"
 | 2026-11-07 | 0.1.4 | 新增 §10.5 `ebx-screen/1.0` 落地实现与 40/40 实测（17 标签绑定、3 导航任务、3 按钮文字全 ok）；§6 追加 4 条坑：HWND_TOPMOST 把后续弹窗压到主窗下面、组合框弹层必须先点标题栏原生激活、任务菜单异步绘制需轮询、任务落盘必须重开对话框读 ValuePattern 才算验证 |
 | 2026-11-07 | 0.1.5 | MCP 升到 v0.2.0（24 工具）：新增 §10.6 UIA 树模型与 `screen_list/screen_open/screen_elements/uia_dump/import_screen_json/import_status`；修 `_prop_value` 深度 16→30；§6 改坑 4 为对话框三宿主，追加坑 16–18（属性面板深度、元件 dock 无 TabControl、文档页签自绘）；补 NO_PROXY `[::1]` 与双进程说明 |
 | 2026-11-24 | 0.2.0 | 新增 §10.7 原生 Screen View / AI Socket 技术预览：门控、协议、导入/Changeset、8 控件导入、编译与离线导航验收；修复“编译中”误判与 `ebx_open` 模态框激活/“否”按钮匹配；明确内联文字、未解析变量与地址批量修改边界；新增 12 个原生工具离线测试 |
+| 2026-11-25 | 0.2.1 | 补实测 `displayString` 四种形式、字符串库 CSV 前提、Changeset `set_property` envelope 与规范实体路径；验证真实 Project 变量绑定；记录设备 URI 原样回导失败与 `all_ok` 语义边界；转换器新增未解析引用失败判定与回归测试 |
 
 > 之后每次在本会话获得新知识，追加一行并把改动写进对应小节；同时同步 `EBX-MCP-CONTROL-PLAN.md`、`RESEARCH-LEDGER.md` 与 Skill。

@@ -10,7 +10,7 @@ argument-hint: <任务，例如 "打开示例工程并编译">
 
 # EasyBuilder X（威纶通）MCP 控制 Skill
 
-作者：hoverwu ｜ 版本：0.4.0 ｜ 建立：2026-11-06（2026-11-07 补画面导航；2026-11-07 补 UIA 树模型；2026-11-24 补原生 Screen View 预览实测）
+作者：hoverwu ｜ 版本：0.5.0 ｜ 建立：2026-11-06（2026-11-07 补画面导航；2026-11-07 补 UIA 树模型；2026-11-24 至 25 补原生 Screen View 预览实测）
 事实源：`EASYBUILDERX-UIA-AGENT-GUIDE.md`（与本 Skill 同目录，活文档，先读它）
 
 ## Overview
@@ -162,11 +162,12 @@ MCP 不可用时，直接用 `tools/` 下的脚本（导入器 / 导出器 / 校
 - 交付包：`out/Alarm_Trend.screen.json` + `out/ebx_screen_importer.py` + `out/IMPORT_README.md` + `out/EXPORT_IMPORT_RUNBOOK.md`。
 - **不要逆向 `.ebxprj`**：高熵加密，无官方格式。详细盘点见 Guide §10 / §10.5。
 
-## 原生 Screen View JSON 技术预览（2026-11-24 实测）
+## 原生 Screen View JSON 技术预览（2026-11-24 至 25 实测）
 
 - **门控与授权**：仅在本机、用户明确授权后创建 `enable_ebx_socket_server` 与 `technical_preview` 两个零字节标记并重启 EBX。目标机/新版本不要擅自创建，更不要宣称这是官方支持。
 - **发现与协议**：客户端读取 `%APPDATA%/Weintek/EasyBuilder X/ai-sockets/<pid>.json`，ping 验证后连接 `127.0.0.1`；NDJSON、一连接一请求，Socket `schema_version` 为字符串 `"1.4"`，原生归档 `header.schemaVersion` 为 `"1.1"`。
-- **能力**：已实测 `exportScreenView`、`detectImportConflicts`、`importScreenView`、`getViewByScreenName`、`getDiagnostics`、`applyChangeset/set_event`；支持 Text/Numeric/Lamp/Button、坐标、变量引用和切屏任务。
+- **能力**：已实测画面导出/导入、冲突检测、读回、诊断、Schema、`applyChangeset/set_property/set_event` 与 composite model 导入导出；支持 Text/Numeric/Lamp/Button、坐标、变量引用和切屏任务。
+- **推荐快速流程**：先在 EBX 一次性准备 Project 变量和字符串库，再让 AI 修改紧凑 JSON 并批量导入。变量准备是人工/半自动前置步骤，原生归档不能创建变量或字符串库。
 - **生成流程**：
 
 ```bat
@@ -176,17 +177,21 @@ python tools\ebx_native_codegen.py examples\C2_Native_Sample.screen.json --scree
 python tools\ebx_native_codegen.py examples\C2_Native_Sample.screen.json --screens 参数设定 --omit-text --import --evidence-dir out\C2_import
 ```
 
+- **文字**：`Text.text` / `Button.text` 接受 `String://Project:ID[n]`、带 `path` 与 `indexReference`/单个 `indexReferences` 的对象，或 `null`；普通内联文字被拒。目标工程必须先有对应字符串 ID，可用字符串表 CSV/XLSX 准备。转换器原样透传字符串引用。
+- **变量**：已实测在 EBX `工程文件 > 变量` 新建 Project 变量 `rTempMeas` 后，`Variable://Project/rTempMeas` 导入无未解析引用。缺失变量会保留占位并阻塞编译；转换器现在把顶层或操作级 `unresolved_references` 判为失败，不能只看 `all_ok`。
+- **设备变量边界**：真实设备绑定导出为 `Variable://[PLC_NX502]/GlobalVariables/<tag>`，但原样改名回导报 `INVALID_REFERENCE: index_references_are_missing`。当前不要把设备 URI 当作可直接跨工程导入的便携绑定。
+- **Changeset**：`set_property` 用 `{type,entity,property,value}`；`entity` 是 `画面名/元件名`，不是 `Object://Screen:...`。已验证把文本设为既有 `String://Project:ID[31]`。
+- **地址批量修改**：`tags[].address` 不会改写原生绑定。改地址应操作变量库/设备标签，或先替换 JSON 的 tag 名再导入。
 - **实测结果**：8/8 控件导入；冲突检查、导入、读回、导出、诊断约 0.5 s。无绑定页编译 7.1 s；离线模拟进入该页并点击生成按钮跳转“参数设定”成功。
-- **当前硬边界**：`Text.text` / `Button.text` 只接受字符串库引用，不接受普通内联文字；归档不能嵌入字符串库。`Variable://Project/<tag>` 不存在时保留占位但会阻塞编译。`tags[].address` 当前不会改写原生绑定，因此地址批量修改仍需变量库或另一条经实测的绑定转换流程。
 - **复现测试**：`python -m unittest discover -s tools -p "test_ebx_*.py"`；验证器测试使用 `test_validate_screen_json.py`。不要对 `tools/` 使用宽泛 `test_*.py` 发现，里面有桌面调试脚本。
 
 ## 未验证边界
 
-- 原生预览中的普通文字/字符串库自动创建与移植；
-- 原生预览中的变量创建、真实地址绑定和 `tags[].address` 批量改写；
-- 含未解析变量占位页面的编译行为（当前会停滞，必须先补齐变量）；
+- 原生预览中的字符串库自动创建与移植；
+- 原生预览中的变量自动创建、设备 URI 直接回导和 `tags[].address` 批量改写；
+- 自定义模板克隆参数、实例覆盖与跨工程保真度；复杂报警/趋势/动画/宏控件；
 - JS Action 是否可用、CommonJS `module.exports` 是否被本机 require 接受、PLC 变量读写与 Canvas 绘制；
-- 任意复杂 EBX 画面反向导出为完整可编辑 JSON；报警/趋势/动画/宏保真度；
+- 任意复杂 EBX 画面反向导出为完整可编辑 JSON；
 - 其他 EBX 版本/机器的预览门控、Socket 协议与性能。
 - 报警/配方/表格的 Excel（`libxl.dll`）导入导出入口；
 - com-x:8000 / dserver-x:24763 应用层协议；
