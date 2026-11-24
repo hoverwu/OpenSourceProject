@@ -1,0 +1,25 @@
+{
+  "schema": "ebx-screen/1.0",
+  "screen": {
+    "name": "C2_主监控_紧凑样例",
+    "width": 1024,
+    "height": 600,
+    "element_count": 8,
+    "elements": [
+      {"id": "c2-title", "name": "C2标题", "type": "static_text", "x": 150, "y": 24, "w": 620, "h": 40, "text": "管道加热温控系统 · 运行监控（C2）"},
+      {"id": "c2-lbl-temp", "name": "C2出口温度标签", "type": "static_text", "x": 150, "y": 80, "w": 170, "h": 28, "text": "出口温度 (°C)"},
+      {"id": "c2-lbl-sp", "name": "C2设定温度标签", "type": "static_text", "x": 330, "y": 80, "w": 170, "h": 28, "text": "HMI 设定 (°C)"},
+      {"id": "c2-num-temp", "name": "C2出口温度", "type": "numeric_display", "x": 150, "y": 112, "w": 170, "h": 68, "tag": "rTempMeas", "readonly": true},
+      {"id": "c2-num-sp", "name": "C2HMI设定值", "type": "numeric_display", "x": 330, "y": 112, "w": 170, "h": 68, "tag": "rSetpointHmi", "readonly": false},
+      {"id": "c2-lbl-heater", "name": "C2加热状态标签", "type": "static_text", "x": 160, "y": 260, "w": 160, "h": 28, "text": "加热输出状态"},
+      {"id": "c2-ind-heater", "name": "C2加热输出灯", "type": "indicator", "x": 220, "y": 300, "w": 60, "h": 60, "tag": "xHeaterOn", "readonly": true},
+      {"id": "c2-btn-params", "name": "C2参数设定按钮", "type": "button", "x": 150, "y": 500, "w": 200, "h": 48, "label": "参数设定", "task": {"type": "switch_screen", "target": "参数设定"}}
+    ]
+  },
+  "tags": [
+    {"name": "rTempMeas", "datatype": "REAL", "address": "D100"},
+    {"name": "rSetpointHmi", "datatype": "REAL", "address": "D102"},
+    {"name": "xHeaterOn", "datatype": "BOOL", "address": "W0.00"}
+  ],
+  "used_tags": ["rTempMeas", "rSetpointHmi", "xHeaterOn"]
+}

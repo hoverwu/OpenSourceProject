@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""ebx-mcp-smoke-test.py - EasyBuilder X 专用 MCP 服务器只读自检（hoverwu / 0.2.0）
+"""ebx-mcp-smoke-test.py - EasyBuilder X 专用 MCP 服务器只读自检（hoverwu / 0.3.0）
 
 用法:
   python ebx-mcp-smoke-test.py [port]

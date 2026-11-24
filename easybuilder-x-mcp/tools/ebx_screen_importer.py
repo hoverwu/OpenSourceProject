@@ -15,7 +15,7 @@
   python ebx_screen_importer.py Alarm_Trend.screen.json --limit 8 --no-bind --no-nav
   python ebx_screen_importer.py Alarm_Trend.screen.json --force   # 目标画面已存在时仍然新建（同名会自动加后缀）
 
-说明：EBX 没有画面级 JSON 导入，这个脚本用 UIA 驱动界面重建，等价于人工拖放+绑变量。
+说明：本脚本使用 UIA 驱动界面重建画面；EBX 二进制中的 Screen View JSON 入口仍需单独启用与验证。
 """
 import argparse
 import ctypes
@@ -27,6 +27,7 @@ import sys
 import time
 
 import uiautomation as auto
+from ebx_layout import RIBON
 
 auto.SetGlobalSearchTimeout(4)
 
@@ -39,14 +40,9 @@ u.SetWindowPos.restype = wt.BOOL
 # 参考环境：Windows 11 / 1920x1080 / 125% 缩放未启用（系统 100%）/ EBX 最大化
 # 说明：QtitanRibbon 是自绘控件，UIA 拿不到选项卡和图标，只能按像素点。
 #       换机器/换 DPI/换窗口尺寸后请先运行 `--probe-ribbon` 生成带刻度截图再校准。
-RIBBON_TAB = (256, 58)      # “元件”选项卡（实测：选项卡文字中心 y≈58）
-ICONS = {
-    "文本": (97, 146),      # 绘图组第二行的“A”＝静态文本（不是 输入组的 ABC＝文本输入）
-    "文本输入": (543, 90),
-    "数值": (495, 90),
-    "指示灯": (184, 90),
-    "按钮": (286, 90),
-}
+RIBBON_TAB = tuple(RIBON["tabs"]["元件"])
+ICONS = {kind: tuple(RIBON["元件"][kind]) for kind in ("文本", "数值", "指示灯", "按钮")}
+NATIVE_TYPE = {"文本": "文本", "数值": "数值", "指示灯": "指示灯", "按钮": "开关"}
 TYPE_TO_KIND = {
     "static_text": "文本",
     "numeric_display": "数值",
@@ -1049,7 +1045,7 @@ def main():
         log("[warn] 未知 schema: %s" % data.get("schema"))
     scr = data["screen"]
     target = args.screen or scr["name"]
-    elements = [e for e in scr["elements"] if not (args.no_nav and e["type"] == "button")]
+    elements = scr["elements"]
 
     win = find_main()
     if win is None:
@@ -1062,6 +1058,14 @@ def main():
     global SCREEN_NAMES
     SCREEN_NAMES = list(names)
     log("[screen] 现有画面: %s" % names)
+    if not args.no_nav:
+        invalid_targets = [(el["name"], el["task"]["target"]) for el in elements
+                           if el["type"] == "button" and el.get("task", {}).get("type") == "switch_screen"
+                           and el["task"].get("target") not in SCREEN_NAMES]
+        if invalid_targets:
+            for name, target in invalid_targets:
+                log("[ERR] 导航目标不存在: %s -> %s" % (name, target))
+            return 3
     if target in names:
         if not args.force:
             log("[ERR] 画面 %s 已存在；用 --force 新建副本，或 --screen 指定别的名字" % target)
@@ -1083,19 +1087,28 @@ def main():
     click(rect(win)[0] + RIBBON_TAB[0], rect(win)[1] + RIBBON_TAB[1], 1.0)  # 预热元件页
 
     done = 0
+    failed_elements = []
+
+    def fail(name, message):
+        if name not in failed_elements:
+            failed_elements.append(name)
+        log("[ERR] %s: %s" % (name, message))
+
     for el in elements:
         if args.limit and done >= args.limit:
             break
         kind = el.get("ebx_kind") or TYPE_TO_KIND[el["type"]]
+        if kind not in ICONS:
+            fail(el["name"], "未知放置类型 %s" % kind)
+            continue
         scroll_props(win, "up", 12)
         ok = False
         for attempt in range(2):
             place(win, origin, kind, el["x"], el["y"], el["w"], el["h"])
             time.sleep(0.3)
-            if pane_kind(win) == kind:
+            if pane_kind(win) == NATIVE_TYPE[kind]:
                 ok = True
                 break
-            # 可能是别的文档/弹窗抢了焦点：重开目标画面并重新标定
             log("[retry] %s 未放置成功，重开画面编辑器" % el["name"])
             if not open_screen(win, target, max_left):
                 log("[warn] 无法重开画面 %s" % target)
@@ -1106,29 +1119,40 @@ def main():
                 origin = o
             scroll_props(win, "up", 8)
         if not ok:
-            log("[warn] 放置失败: %s" % el["name"])
+            fail(el["name"], "放置失败或原生类型不匹配")
             continue
-        set_field_by_label(win, "名称", el["name"])
+        if not set_field_by_label(win, "名称", el["name"]):
+            fail(el["name"], "名称写入失败")
         if el["type"] == "static_text" and el.get("text"):
-            set_field_by_label(win, "文本", el["text"])
+            if not set_field_by_label(win, "文本", el["text"]):
+                fail(el["name"], "文本写入失败")
         if el.get("tag") and not args.no_bind:
             r = bind_tag(win, el["tag"], kind, bool(el.get("readonly")))
             log("[bind] %s <- %s : %s" % (el["name"], el["tag"], r))
+            if r != "ok":
+                fail(el["name"], "标签绑定失败: %s" % r)
         if el["type"] == "button":
             if el.get("task", {}).get("type") == "switch_screen" and not args.no_nav:
                 t = add_switch_task(win, el["task"]["target"])
                 log("[task] %s -> %s : %s" % (el["name"], el["task"]["target"], t))
+                if t != "ok":
+                    fail(el["name"], "切换画面任务失败: %s" % t)
             if el.get("label"):
                 l = set_button_label(win, el["label"])
                 log("[label] %s : %s" % (el["name"], l))
+                if l != "ok":
+                    fail(el["name"], "按钮文字写入失败: %s" % l)
+        if el["name"] in failed_elements:
+            continue
         done += 1
         log("[done] %d/%d %s (%s)" % (done, len(elements), el["name"], kind))
 
     if not args.no_save:
         keys("ctrl+s")
         time.sleep(1.2)
-    log("[ok] 已重建 %d 个元件到画面 %s" % (done, target))
-    return 0
+    log("[ok] rebuilt=%d failed=%d total=%d screen=%s"
+        % (done, len(failed_elements), len(elements), target))
+    return 1 if failed_elements else 0
 
 
 if __name__ == "__main__":

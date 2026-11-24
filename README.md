@@ -11,7 +11,7 @@ Qoder Skill：用 Three.js + WebAudio 构建「音乐阶梯」H5（v0.1.0，从 
 
 ## easybuilder-x-mcp
 
-Qoder Skill + 专用 MCP 服务器：用 UIA 与坐标地图控制威纶通 / 威纶 EasyBuilder X（EBX）HMI 组态软件（Skill 0.3.0，MCP 0.2.0，24 个工具，含画面 JSON 导出/重建）。
+Qoder Skill + 专用 MCP 服务器：用 UIA 与坐标地图控制威纶通 / 威纶 EasyBuilder X（EBX）HMI 组态软件（Skill 0.4.0，MCP 0.3.0，24 个工具，含画面 JSON 导出/重建与本机 Screen View 技术预览）。
 
 - [README](easybuilder-x-mcp/README.md)
 - [SKILL.md](easybuilder-x-mcp/SKILL.md)

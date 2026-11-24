@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 """
 ebx_mcp_server.py - EasyBuilder X 专用 MCP 服务器（UIA + 坐标地图）
-author: hoverwu  version: 0.2.0  date: 2026-11-07
+author: hoverwu  version: 0.3.0  date: 2026-11-24
 
 定位：不是通用 uiautomation-mcp 的换皮，而是把 EBX 实测出来的
       「Ribbon 坐标地图 + 面板 UIA 语义 + 原生对话框 AutomationId」
@@ -61,6 +61,8 @@ import glob
 import ctypes
 import ctypes.wintypes as wt
 import subprocess
+
+from tools.ebx_layout import RIBON
 
 
 try:
@@ -872,37 +874,6 @@ def _related_processes():
     return _proc_list(["EasyBuilderX", "cMTRemote", "com-x", "dserver-x", "cMTInspector", "诊断"])
 
 
-# ----------------------------------------------------------------- Ribbon 坐标地图
-RIBON = {
-    "tabs": {
-        "文件": [33, 51], "常用": [97, 51], "工程文件": [163, 51], "元件": [230, 51],
-        "资料/历史": [298, 51], "IIoT": [363, 51], "检视": [417, 51], "工具": [465, 51],
-        "一般属性": [565, 51], "事件": [615, 51],
-    },
-    "工程文件": {
-        "编译": [33, 100], "在线模拟": [98, 100], "离线模拟": [167, 100],
-        "下载PC>HMI": [240, 100], "工程设置": [328, 100], "系统元件": [392, 100],
-        "设备列表": [455, 100], "服务器列表": [522, 100], "UAC": [590, 100],
-        "语言": [658, 100], "图片": [727, 100], "字符串": [787, 100],
-        "数据类型": [852, 100], "变量": [913, 100], "JS resource": [972, 100],
-        "宏指令": [1036, 100], "条件": [1093, 100],
-    },
-    "元件": {
-        "指示灯": [143, 100], "开关": [193, 100], "按钮": [240, 100],
-        "项目选单": [286, 100], "滑动开关": [338, 100],
-        "数值": [428, 100], "文本": [475, 100],
-        "日期/时间": [545, 100], "持续时间": [605, 100],
-        "棒图": [665, 100], "嵌入窗口": [720, 100], "2D条码": [775, 100],
-        "PDF检视器": [825, 100], "自定义": [880, 100],
-    },
-    "文件后台": {
-        "新建": [42, 99], "打开": [42, 153], "保存": [42, 205], "另存为": [42, 253],
-        "关闭": [42, 303], "反编译": [42, 355], "语言": [42, 408],
-        "偏好设置": [42, 460], "关于": [42, 511], "退出": [525, 572],
-    },
-}
-
-
 # ================================================================= MCP 工具
 @mcp.tool()
 def ebx_ribbon_map() -> dict:
@@ -1206,18 +1177,27 @@ def ebx_import_status() -> dict:
         text = raw.decode("gbk", "replace")
     lines = [l for l in text.splitlines() if l.strip()]
     pid = st.get("import_pid")
+    done = sum(1 for l in lines if l.startswith("[done]"))
+    total = st.get("import_total")
+    summary = next((l for l in reversed(lines) if l.startswith("[ok] rebuilt=")), "")
+    match = re.search(r"failed=(\d+) total=(\d+)", summary)
+    failed = int(match.group(1)) if match else None
+    if match:
+        total = int(match.group(2))
+    errors = [l for l in lines if l.startswith("[ERR]") or "[warn]" in l][-5:]
     return {
         "found": True,
         "log": log_path,
         "pid": pid,
         "running": bool(pid) and _pid_alive(pid),
         "target": st.get("import_screen"),
-        "done": sum(1 for l in lines if l.startswith("[done]")),
-        "total": st.get("import_total"),
+        "done": done,
+        "total": total,
+        "failed": failed,
         "binds_ok": sum(1 for l in lines if l.startswith("[bind]") and l.rstrip().endswith("ok")),
         "tasks_ok": sum(1 for l in lines if l.startswith("[task]") and l.rstrip().endswith("ok")),
-        "finished": any(l.startswith("[ok] 已重建") for l in lines),
-        "errors": [l for l in lines if l.startswith("[ERR]") or "[warn]" in l][-5:],
+        "finished": bool(summary) and failed == 0 and total is not None and done == total and not errors,
+        "errors": errors,
         "tail": lines[-12:],
     }
 
@@ -1399,13 +1379,11 @@ def ebx_open(path: str, discard_unsaved: bool = False) -> dict:
     当前工程有未保存修改时会弹「是否要保存该工程文件?」——默认**不替用户决定**并返回 ok:false；
     明确要丢弃时才传 discard_unsaved=true（等于点「否」）。"""
     _ensure_uia_thread()
-    if not _activate():
-        return {"ok": False, "error": "EasyBuilder X 未运行"}
     if not os.path.isfile(path):
         return {"ok": False, "error": "文件不存在", "path": path}
+    if _main_window() is None:
+        return {"ok": False, "error": "EasyBuilder X 未运行"}
     path = os.path.abspath(path)
-    _send_combo("esc")
-    time.sleep(0.2)
     # 0) 先处理已存在的模态框（典型：上一次打开留下的「是否要保存该工程文件?」）
     pre = _find_visible_dialog()
     if pre is not None:
@@ -1424,6 +1402,10 @@ def ebx_open(path: str, discard_unsaved: bool = False) -> dict:
             return {"ok": False, "path": path, "prompt": pre.Name or "",
                     "buttons": btns,
                     "hint": "有模态框未处理：先保存/取消，或用 discard_unsaved=true 丢弃未保存修改"}
+    if not _activate():
+        return {"ok": False, "error": "EasyBuilder X 未运行"}
+    _send_combo("esc")
+    time.sleep(0.2)
     _click_rel(33, 51)   # 文件
     time.sleep(0.6)
     _click_rel(42, 153)  # 打开
@@ -1450,16 +1432,9 @@ def ebx_open(path: str, discard_unsaved: bool = False) -> dict:
     if prompt is not None:
         btns = _dialog_buttons(prompt)
         if discard_unsaved:
-            for e in _iter(prompt, 8):
-                try:
-                    nm = (e.Name or "").strip()
-                    if e.ControlTypeName == "ButtonControl" and nm in ("否", "否(N)", "&No", "No"):
-                        _click_element(e)
-                        time.sleep(0.7)
-                        prompt = _find_visible_dialog()
-                        break
-                except Exception:
-                    pass
+            _click_button(prompt, ("否", "No"))
+            time.sleep(0.7)
+            prompt = _find_visible_dialog()
         if prompt is not None:
             return {"ok": False, "path": path, "fill": how, "button": clicked,
                     "prompt": prompt.Name or "", "buttons": btns,
@@ -1509,8 +1484,7 @@ def ebx_new_project(wait_seconds: int = 15) -> dict:
 
 @mcp.tool()
 def ebx_compile(project_dir: str = "", timeout: int = 120) -> dict:
-    """编译工程：工程文件 » 编译，按 .ebxobj 更新时间 + 错误弹窗判定结果。
-    project_dir 留空时用最近一次 ebx_save_as/ebx_open 记录的目录。"""
+    """编译工程：识别“编译中”进度窗，按 .ebxobj 更新与稳定判定结果。"""
     _ensure_uia_thread()
     if not _activate():
         return {"ok": False, "error": "EasyBuilder X 未运行"}
@@ -1529,7 +1503,7 @@ def ebx_compile(project_dir: str = "", timeout: int = 120) -> dict:
         try:
             return path, os.path.getmtime(path), os.path.getsize(path)
         except OSError:
-            return path, 0.0, 0
+            return path, 0.0, 0.0
 
     art, mt0, sz0 = snapshot()
     _send_combo("esc")
@@ -1539,32 +1513,56 @@ def ebx_compile(project_dir: str = "", timeout: int = 120) -> dict:
     _click_rel(33, 100)  # 编译
     t0 = time.time()
     last_mt, last_sz, stable = mt0, sz0, 0
+    progress_seen = False
+    last_progress = []
     while time.time() - t0 < timeout:
         d = _find_visible_dialog()
         if d is not None:
-            return {"ok": False, "error": "编译弹窗", "dialog": d.Name,
-                    "text": _dialog_text(d), "buttons": _dialog_buttons(d),
-                    "artifact": art, "elapsed": round(time.time() - t0, 1)}
+            text = _dialog_text(d)
+            joined = "\n".join(text) if isinstance(text, list) else str(text)
+            if "编译中" in (d.Name or ""):
+                progress_seen = True
+                if text:
+                    last_progress = text
+                if any(marker in joined for marker in ("编译失败", "发生错误", "错误：")):
+                    return {"ok": False, "error": "编译失败", "dialog": d.Name,
+                            "text": text, "buttons": _dialog_buttons(d),
+                            "artifact": art, "elapsed": round(time.time() - t0, 1)}
+            else:
+                return {"ok": False, "error": "编译弹窗", "dialog": d.Name,
+                        "text": text, "buttons": _dialog_buttons(d),
+                        "artifact": art, "elapsed": round(time.time() - t0, 1)}
         art, mt, sz = snapshot()
         if mt > mt0 + 0.001 and sz > 0:
-            changed = True
             if sz == last_sz and mt == last_mt:
                 stable += 1
             else:
                 stable = 0
             last_mt, last_sz = mt, sz
-            # 大文件编译会边写边变大：连续两次采样不变才算完成
+            # 大文件编译会边写边变大：连续两次采样不变后，再等进度窗关闭。
             if stable >= 2:
+                close_deadline = time.time() + 10
+                while time.time() < close_deadline:
+                    d = _find_visible_dialog()
+                    if d is None:
+                        break
+                    if "编译中" not in (d.Name or ""):
+                        return {"ok": False, "error": "编译弹窗", "dialog": d.Name,
+                                "text": _dialog_text(d), "buttons": _dialog_buttons(d),
+                                "artifact": art, "elapsed": round(time.time() - t0, 1)}
+                    time.sleep(0.3)
                 d = _find_visible_dialog()
                 if d is not None:
-                    return {"ok": False, "error": "编译弹窗", "dialog": d.Name,
-                            "text": _dialog_text(d), "buttons": _dialog_buttons(d),
-                            "artifact": art, "elapsed": round(time.time() - t0, 1)}
+                    return {"ok": False, "error": "编译完成但进度窗未关闭", "dialog": d.Name,
+                            "text": _dialog_text(d), "artifact": art,
+                            "elapsed": round(time.time() - t0, 1)}
                 return {"ok": True, "artifact": art, "size": sz, "size_before": sz0,
+                        "progress_seen": progress_seen, "progress": last_progress,
                         "elapsed": round(time.time() - t0, 1)}
         time.sleep(0.6)
-    return {"ok": False, "error": "编译超时（无产物更新、无弹窗）", "artifact": art,
-            "hint": "记录面板文本暂不可读；请 ebx_screenshot 人眼复核"}
+    return {"ok": False, "error": "编译超时", "artifact": art,
+            "progress_seen": progress_seen, "progress": last_progress,
+            "hint": "请检查编译进度窗与记录面板"}
 
 
 @mcp.tool()

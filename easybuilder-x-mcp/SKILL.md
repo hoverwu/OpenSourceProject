@@ -10,19 +10,21 @@ argument-hint: <任务，例如 "打开示例工程并编译">
 
 # EasyBuilder X（威纶通）MCP 控制 Skill
 
-作者：hoverwu ｜ 版本：0.3.0 ｜ 建立：2026-11-06（2026-11-07 补画面导航；2026-11-07 补 UIA 树模型与 6 个新工具）
-事实源：`references/EASYBUILDERX-UIA-AGENT-GUIDE.md`（与本 Skill 同目录的 `references/` 下，活文档，先读它）
+作者：hoverwu ｜ 版本：0.4.0 ｜ 建立：2026-11-06（2026-11-07 补画面导航；2026-11-07 补 UIA 树模型；2026-11-24 补原生 Screen View 预览实测）
+事实源：`EASYBUILDERX-UIA-AGENT-GUIDE.md`（与本 Skill 同目录，活文档，先读它）
 
 ## Overview
 
-EasyBuilder X **没有官方 API**（无 COM/SDK/插件/工程 CLI），`.ebxprj` 是加密二进制容器。
-唯一通用入口是 **UIA**，且存在关键不对称：
+EasyBuilder X **没有公开承诺的稳定 API**（无 COM/SDK/插件/工程 CLI），`.ebxprj` 是加密二进制容器。
+通用可控入口是 **UIA**，且存在关键不对称：
 
 - 工作区面板 / 原生对话框：UIA 可读可点（面板 Name 齐全，AutomationId 为空）；
 - Ribbon 区：UIA 完全不可见，只能坐标点击；
 - 画布：元件内容不暴露，只能坐标放置/选中。
 
-本 Skill 通过专用 MCP 服务器 `ebx_mcp_server.py` 把「坐标地图 + UIA 语义 + 对话框 AutomationId」固化成领域工具，避免每次重新摸索。
+2026-11-24 在本机 V1.01.376s 上验证了另一条**本机技术预览**路线：显式启用两个标记后，可通过 loopback Socket 做 Screen View JSON 导入/导出/Changeset。它不是公开稳定 API，也未在其他版本/机器验证。
+
+本 Skill 通过专用 MCP 服务器 `ebx_mcp_server.py` 把「坐标地图 + UIA 语义 + 对话框 AutomationId」固化成领域工具；原生预览客户端和转换器位于 `tools/ebx_ai_socket.py`、`tools/ebx_native_codegen.py`。
 
 ## 硬性前提
 
@@ -31,7 +33,7 @@ EasyBuilder X **没有官方 API**（无 COM/SDK/插件/工程 CLI），`.ebxprj
 3. **Ribbon 只认坐标**：页签行 y=51，按钮行 y=100。
 4. **对话框有三种宿主**：原生文件框/消息框是独立顶层 `#32770`；EBX 自己的 Qt 消息框（如「是否要保存该工程文件?」）是无标题顶层 `Qt5QWindowIcon`；还有些对话框以子 `WindowControl` 挂在主窗子树里。三种都要找，且要跳过 1×1 的 `Qt5QWindowToolSaveBits*`。
 5. **画布操作只能坐标**；放完元件后属性面板可用 Name/ValuePattern 操作。
-6. **编译是流式写大文件**（79 MB 量级），必须等大小/mtime 稳定再判成功。
+6. **编译是流式写大文件**（79–82 MB 量级），必须等大小/mtime 稳定；非模态“编译中”是进度窗，不是错误弹窗。
 7. **画面树/元件列表都是 `TreeControl` 的 `TreeItemControl` 行**：画面树在左区第一棵，元件列表在第二棵；**元件 dock 没有 TabControl**，不能按页签找。
 8. **文档页签栏是自绘的**，UIA 读不到；判断"当前打开哪个画面"只能读属性面板「名称」的值。
 9. **下拉弹层/右键菜单是异步渲染的独立 `Qt5QWindowPopupDropShadowSaveBits` 顶层**，展开后要轮询 ≤1.5 s 才能枚举到条目。
@@ -119,7 +121,7 @@ MCP 不可用时，直接用 `tools/` 下的脚本（导入器 / 导出器 / 校
 2. **另存为**：`ebx_save_as(全路径)` → 自动走文件后台 + 原生对话框 + 覆盖确认 + 产物校验。
 3. **打开**：`ebx_open(全路径)`；若有未保存提示挡住，用 `ebx_open(全路径, discard_unsaved=True)`（工具只在明确要求时点「否」，并回读标题确认）。
 4. **放元件**：`ebx_ribbon("元件","数值")` → `ebx_click_xy(x,y)` → 属性面板联动。
-5. **编译**：`ebx_compile()` → 等 `.ebxobj` 稳定（实测约 5.7 s，79 MB），有错误弹窗则返回文本。
+5. **编译**：`ebx_compile()` 识别“编译中”进度窗，等 `.ebxobj` 更新且稳定、进度窗关闭；有明确失败标记才报错。有效基线约 6.1 s，无绑定生成页约 7.1 s。
 6. **模拟**：`ebx_offline_simulate()` → cMTRemote + com-x:8000 + dserver-x:24763（实测 4.6 s）；`ebx_stop_simulation()` 清场。
 7. **画面导航**：放「按钮」→ 名称 → 任务行「新增...」(1355,433) →「切换画面」(1434,504) → 对话框里选目标画面 → 确定；再滚到属性面板底部「标签」组写按钮文本（粘贴中文）。详细坐标与坑见 Guide §11。
 8. **模拟器逐页验证**：重启模拟后 16 s 内点击（被遮挡后前台锁会让 TOPMOST 失效）；页面坐标 = 白底包围盒 (x0,y0,w,h) 上按 (x0+cx·w/1024, y0+cy·h/600) 换算。
@@ -149,7 +151,7 @@ MCP 不可用时，直接用 `tools/` 下的脚本（导入器 / 导出器 / 校
 
 ## 页面 JSON 导入 / 导出
 
-**官方没有页面级 JSON 通道。** 打开对话框只认 `.ebxprj/.ebxobj`；「反编译」只把 `.ebxobj` 还原成 `.ebxprj`。官方导入导出只有：字符串表 CSV/XLSX、宏指令 `.ebm`、审计 CSV、图片。
+**公开稳定页面级 JSON API 尚未成立。** 打开对话框只认 `.ebxprj/.ebxobj`；「反编译」只把 `.ebxobj` 还原成 `.ebxprj`。官方导入导出只有：字符串表 CSV/XLSX、宏指令 `.ebm`、审计 CSV、图片。以下两条都是工作桥，不要混为官方能力。
 
 已落地的桥（`ebx-screen/1.0`）：
 
@@ -160,8 +162,32 @@ MCP 不可用时，直接用 `tools/` 下的脚本（导入器 / 导出器 / 校
 - 交付包：`out/Alarm_Trend.screen.json` + `out/ebx_screen_importer.py` + `out/IMPORT_README.md` + `out/EXPORT_IMPORT_RUNBOOK.md`。
 - **不要逆向 `.ebxprj`**：高熵加密，无官方格式。详细盘点见 Guide §10 / §10.5。
 
+## 原生 Screen View JSON 技术预览（2026-11-24 实测）
+
+- **门控与授权**：仅在本机、用户明确授权后创建 `enable_ebx_socket_server` 与 `technical_preview` 两个零字节标记并重启 EBX。目标机/新版本不要擅自创建，更不要宣称这是官方支持。
+- **发现与协议**：客户端读取 `%APPDATA%/Weintek/EasyBuilder X/ai-sockets/<pid>.json`，ping 验证后连接 `127.0.0.1`；NDJSON、一连接一请求，Socket `schema_version` 为字符串 `"1.4"`，原生归档 `header.schemaVersion` 为 `"1.1"`。
+- **能力**：已实测 `exportScreenView`、`detectImportConflicts`、`importScreenView`、`getViewByScreenName`、`getDiagnostics`、`applyChangeset/set_event`；支持 Text/Numeric/Lamp/Button、坐标、变量引用和切屏任务。
+- **生成流程**：
+
+```bat
+cd /d "<项目根>"
+python tools\validate_screen_json.py examples\C2_Native_Sample.screen.json --screens 参数设定
+python tools\ebx_native_codegen.py examples\C2_Native_Sample.screen.json --screens 参数设定 --omit-text --output out\C2.native.json
+python tools\ebx_native_codegen.py examples\C2_Native_Sample.screen.json --screens 参数设定 --omit-text --import --evidence-dir out\C2_import
+```
+
+- **实测结果**：8/8 控件导入；冲突检查、导入、读回、导出、诊断约 0.5 s。无绑定页编译 7.1 s；离线模拟进入该页并点击生成按钮跳转“参数设定”成功。
+- **当前硬边界**：`Text.text` / `Button.text` 只接受字符串库引用，不接受普通内联文字；归档不能嵌入字符串库。`Variable://Project/<tag>` 不存在时保留占位但会阻塞编译。`tags[].address` 当前不会改写原生绑定，因此地址批量修改仍需变量库或另一条经实测的绑定转换流程。
+- **复现测试**：`python -m unittest discover -s tools -p "test_ebx_*.py"`；验证器测试使用 `test_validate_screen_json.py`。不要对 `tools/` 使用宽泛 `test_*.py` 发现，里面有桌面调试脚本。
+
 ## 未验证边界
 
+- 原生预览中的普通文字/字符串库自动创建与移植；
+- 原生预览中的变量创建、真实地址绑定和 `tags[].address` 批量改写；
+- 含未解析变量占位页面的编译行为（当前会停滞，必须先补齐变量）；
+- JS Action 是否可用、CommonJS `module.exports` 是否被本机 require 接受、PLC 变量读写与 Canvas 绘制；
+- 任意复杂 EBX 画面反向导出为完整可编辑 JSON；报警/趋势/动画/宏保真度；
+- 其他 EBX 版本/机器的预览门控、Socket 协议与性能。
 - 报警/配方/表格的 Excel（`libxl.dll`）导入导出入口；
 - com-x:8000 / dserver-x:24763 应用层协议；
 - 编译记录文本读取；
@@ -183,10 +209,11 @@ MCP 不可用时，直接用 `tools/` 下的脚本（导入器 / 导出器 / 校
 - 项目根：本文件所在目录（`easybuilder-x-mcp/`，与 MCP 同仓，打包以目录根为准）
 - **本 Skill 源稿**：`SKILL.md`（唯一事实源；部署副本放 `%USERPROFILE%\.qoder-cn\skills\easybuilder-x-mcp\SKILL.md`，Windows 上也可换成对应平台的 skills 目录）
 - **部署/校验**：`tools/sync_skill.py`（改完源稿跑一次）；`tools/sync_skill.py --check` 只校验 sha256，不一致返回 1
-- 手册：`references/EASYBUILDERX-UIA-AGENT-GUIDE.md`
-- 方案：`references/EBX-MCP-CONTROL-PLAN.md` ｜ 台账：`references/RESEARCH-LEDGER.md`
+- 手册：`EASYBUILDERX-UIA-AGENT-GUIDE.md`
+- 方案：`EBX-MCP-CONTROL-PLAN.md` ｜ 台账：`RESEARCH-LEDGER.md`
 - 服务：`ebx_mcp_server.py` ｜ 启动：`start-ebx-mcp.bat` ｜ 自检：`ebx-mcp-smoke-test.py` ｜ 单次调用：`tools/mcp_call_once.py`
 - 页面 JSON：`examples/Alarm_Trend.screen.json` ｜ 导入器：`tools/ebx_screen_importer.py`
+- 原生预览：`tools/ebx_ai_socket.py` ｜ `tools/ebx_native_codegen.py` ｜ `tools/test_ebx_ai_socket.py` ｜ `tools/test_ebx_native_codegen.py` ｜ `tools/test_ebx_mcp_open.py`
 - 交付说明：`examples/IMPORT_README.md`（导入前提/排错）｜ `examples/EXPORT_IMPORT_RUNBOOK.md`（导出与导入全过程）
 - 运行产物：脚本默认写 `out/`，工程放 `work/`（两者都不入仓库）
 
@@ -194,6 +221,6 @@ MCP 不可用时，直接用 `tools/` 下的脚本（导入器 / 导出器 / 校
 
 打包整个工具集时（项目根 zip）：
 
-- **必带**：`SKILL.md`、`README.md`、`ebx_mcp_server.py`、`start-ebx-mcp.bat`、`ebx-mcp-smoke-test.py`、`requirements.txt`、`tools/`（去掉 `__pycache__`）、`examples/` 下的 `Alarm_Trend.screen.json` + `IMPORT_README.md` + `EXPORT_IMPORT_RUNBOOK.md`、`references/` 三份知识文档（Guide / PLAN / Ledger）。
+- **必带**：`SKILL.md`、`README.md`、`ebx_mcp_server.py`、`start-ebx-mcp.bat`、`ebx-mcp-smoke-test.py`、`requirements.txt`、`tools/`（去掉 `__pycache__`）、`examples/` 下的 `Alarm_Trend.screen.json` + `IMPORT_README.md` + `EXPORT_IMPORT_RUNBOOK.md`、根目录三份知识文档（Guide / PLAN / Ledger）。
 - **不带**：`__pycache__`、`out/`、`work/`（工程与 `.ebxobj` 体积大且可能含现场数据）、调试截图与日志、任何本机绝对路径配置。
 - 打包前先跑 `python tools/validate_screen_json.py examples/Alarm_Trend.screen.json` 与 `python tools/sync_skill.py --check`。

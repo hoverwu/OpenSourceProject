@@ -1,15 +1,16 @@
 # EasyBuilder X（威纶通）MCP 控制方案
 
-作者：hoverwu ｜ 版本：1.4.0 ｜ 建立：2026-11-06 ｜ 更新：2026-11-07 ｜ 依据：`RESEARCH-LEDGER.md` 与 `EASYBUILDERX-UIA-AGENT-GUIDE.md`（v0.1.5）
+作者：hoverwu ｜ 版本：1.5.0 ｜ 建立：2026-11-06 ｜ 更新：2026-11-24 ｜ 依据：`RESEARCH-LEDGER.md` 与 `EASYBUILDERX-UIA-AGENT-GUIDE.md`（v0.2.0）
 
-> 本文所有"已验证"条目均于 2026-11-06/07 在 EasyBuilder X V1.01.376s（默认装在 `%ProgramFiles%\EasyBuilderX`）上跑通；"未验证"条目见 §8，不得当作结论引用。
+> 本文所有"已验证"条目均于 2026-11-06/07/24 在 EasyBuilder X V1.01.376s（默认装在 `%ProgramFiles%\EasyBuilderX`）上跑通；"未验证"条目见 §8，不得当作结论引用。
 
 ## 1. 结论先行
 
-EasyBuilder X **没有任何官方编程接口**（无 COM/SDK/插件/工程 CLI；`ebxtool.exe` 仅审计 CSV 校验）。实测后，可行通路收敛为两条：
+EasyBuilder X **没有公开承诺的稳定编程接口**（无 COM/SDK/插件/工程 CLI；`ebxtool.exe` 仅审计 CSV 校验）。实测后，可行通路收敛为三条：
 
-1. **L1 UIA 驱动（主力，已验证到端到端）**：普通权限 `uiautomation` + 已部署的 HTTP MCP 服务 `http://127.0.0.1:8786/mcp`（9 工具）。
-2. **L4 运行时验证（已验证到进程/端口/诊断器）**：离线模拟拉起 cMTRemote + com-x(8000) + dserver-x(24763) + 诊断器对象树。
+1. **L1 UIA 驱动（通用主力，已验证到端到端）**：普通权限 `uiautomation` + 专用 HTTP MCP 服务 `http://127.0.0.1:8788/mcp`（24 工具）；另有通用备用服务 8786（9 工具）。
+2. **L1.5 本机 Screen View 预览（快速结构化路线）**：显式授权启用两个预览标记后，loopback Socket 支持画面 JSON 导入/导出与 Changeset；非公开稳定 API，仅本机版本已实测。
+3. **L4 运行时验证（已验证到进程/端口/诊断器）**：离线模拟拉起 cMTRemote + com-x(8000) + dserver-x(24763) + 诊断器对象树。
 
 **L2 工程文件层已判定关闭**：`.ebxprj` 是自定义二进制容器，payload 高熵（7.993 bit/byte、256 种字节全覆盖、strings 零命中、非 ZIP/tar/7z/gzip/xz/zstd），无法离线生成或打补丁。
 **L3 结构化导入**：仅字符串库 CSV 有手册依据（8.2.3）；`libxl.dll` 暗示报警/配方/表格可能有 Excel 通道，未逐个验证。
@@ -103,7 +104,9 @@ UIA 读机型卡（`cMT3075XH` 默认）→ 坐标点"创建"（窗口内 1645,8
 
 工程文件页签 » 编译（窗口内 33,100）→ 等待 → 检查：同目录 `.ebxobj` 更新时间前进；若失败会出现错误对话框（`#32770`）。
 
-**关键修正（2026-11-06）**：编译是流式写大文件，中途会抓到半成品（实测 14,141,440 B），最终 79,368,013 B。判据必须是「大小与 mtime 连续两次采样稳定」，不能一看到变化就判成功。`ebx_compile` 已按此实现，实测约 5.7 s 完成；不同次产物有几字节级差异（观测 79,368,008 / 013 / 016），禁止用精确大小相等判断。
+**关键修正（2026-11-06）**：编译是流式写大文件，中途会抓到半成品（实测 14,141,440 B），最终 79,368,013 B。判据必须是「大小与 mtime 连续两次采样稳定」，不能一看到变化就判成功。
+
+**关键修正（2026-11-24）**：`编译中` 是非模态进度窗，不是错误。`ebx_compile` 现同时等待 `.ebxobj` 更新、大小/mtime 稳定、进度窗关闭，并识别明确失败标记。有效基线约 6.1 s；无绑定生成页约 7.1 s；不同次产物有几字节级差异，禁止用精确大小相等判断。
 
 **目前仍无文本级编译日志读取**（记录面板折叠不展开，见 §8）。
 
@@ -154,8 +157,10 @@ UIA 读机型卡（`cMT3075XH` 默认）→ 坐标点"创建"（窗口内 1645,8
 - 报警/配方/表格的 Excel（`libxl.dll`）导入导出入口未验证。
 - 画布内容完全不暴露，元件选中/拖动只能坐标化；高 DPI 或 Ribbon 折叠时需重新采样坐标。
 - 机型/系列/方向的非默认选择、画布拖动/多选/对齐、未保存工程的新建确认分支未验证。
-- **官方没有页面级 JSON 导入/导出**：打开对话框只认 `.ebxprj/.ebxobj`；官方结构化交换仅字符串表 CSV/XLSX、宏 `.ebm`、审计 CSV、图片。需要 JSON 只能在 UIA 之上自建"外部描述 ↔ UI 操作"桥（详见 Guide §10）。
-- 本方案所有实测基于 cMT3075XH / 1024x600 / 中文界面的单机环境。
+- **公开稳定页面级 JSON API 未成立**：打开对话框只认 `.ebxprj/.ebxobj`；官方结构化交换仅字符串表 CSV/XLSX、宏 `.ebm`、审计 CSV、图片。UIA 工作桥见 §11；本机技术预览见 §12。
+- 原生预览的内联文字、字符串库自动创建、变量创建/真实绑定与地址批量修改尚未解决；未解析变量占位会阻塞编译。
+- JS Resource 仅证明文件可导入，未找到 JS Object/Action 执行入口；EBPro JS SDK 能力不能当作 EBX 实测。
+- 本方案所有实测基于 cMT3075XH / 1024x600 / 中文界面的单机环境；原生预览仅验证 V1.01.376s。
 
 ## 9. 复现步骤
 
@@ -210,7 +215,20 @@ python tools\ebx_act.py shot out\shot.png
 
 实测（2026-11-07）：4 行画面、`current_screen="主监控"`、`screen_open` `ok`、元件 7 行；导入 `limit=1,no_bind,no_nav,no_save` → `finished=true, done=1/40, errors=[]`，随后删除临时画面并保存，工程仍 4 页。修复点：`_prop_value` 遍历深度 16→30 才能读到 depth >18 的输入框。
 
-## 12. 更新记录
+## 12. 原生 Screen View JSON 与 AI 制图（2026-11-24 追加）
+
+- **入口**：用户明确授权后创建 `technical_preview` 与 `enable_ebx_socket_server` 标记并重启 EBX；仅本机 V1.01.376s 验证，不宣称官方稳定支持。
+- **客户端**：`tools/ebx_ai_socket.py` 从 `%APPDATA%/Weintek/EasyBuilder X/ai-sockets/<pid>.json` 发现 loopback 实例；NDJSON，Socket 协议 `"1.4"`，归档 Schema `"1.1"`。
+- **转换/导入**：`tools/ebx_native_codegen.py` 把 `ebx-screen/1.0` 的 Text/Numeric/Lamp/Button 转为原生对象，支持变量引用与切屏任务，并执行冲突检查、导入、读回、导出、诊断。
+- **实测**：8/8 控件导入，全流程约 0.5 s；无绑定页编译 7.1 s；离线模拟显示生成页，进入该页和点击生成按钮跳转“参数设定”均成功。
+- **文字**：原生 `displayString` 不接受普通内联文字；归档不能嵌入字符串库。当前可复现成功样例使用 `--omit-text`。
+- **变量/地址**：缺失变量可保留占位但会阻塞编译；`tags[].address` 不会改写 `Variable://Project/<tag>` 绑定。必须先解决变量库/绑定转换，再交付批量改地址。
+- **模板/复用**：原生支持 custom/composite model 的 Changeset 与导入导出方法，但跨工程模板复用保真度尚未验收。
+- **JS**：Resource 文件可导入；未找到运行时/设计时执行入口，不能实现当前 AI 动态绘图目标。
+- **证据**：`out/ai_socket/nobind_import/`、`out/ai_socket/offline_sim_c2.png`、`out/ai_socket/offline_sim_params_from_c2.png`。
+- **测试**：`python -m unittest discover -s tools -p "test_ebx_*.py"`（12 项）与验证器 3 项均通过；覆盖模态“否(N) Alt+N”匹配与 `ebx_open` 先处理模态框。
+
+## 13. 更新记录
 
 | 日期 | 版本 | 内容 |
 | --- | --- | --- |
@@ -219,3 +237,4 @@ python tools\ebx_act.py shot out\shot.png
 | 2026-11-07 | 1.2.0 | 新增 §10 画面导航能力：按钮任务（切换画面）、按钮标签、启动页不可配置、批量生成顺序与 pane_kind 误判、模拟器截图前台锁与白底包围盒换算；管道加热工程 4 页 105 元件 + 12 导航键编译/模拟通过 |
 | 2026-11-07 | 1.3.0 | 新增 §11 页面 JSON 迁移：`ebx-screen/1.0` schema、导入器实现与 40/40 实测；记录 HWND_TOPMOST 压窗、弹层需标题栏原生激活、任务菜单异步轮询、任务落盘需 ValuePattern 复核四个坑 |
 | 2026-11-07 | 1.4.0 | MCP v0.2.0（24 工具）：§11.1 页面级通道 `screen_list/screen_open/screen_elements/uia_dump/import_screen_json/import_status`；修 `_prop_value` 深度；补 UIA 树模型、对话框三宿主、元件 dock 无 TabControl、文档页签自绘、NO_PROXY `[::1]` 与双进程说明 |
+| 2026-11-24 | 1.5.0 | 新增 §12 原生 Screen View / AI Socket 技术预览；修正“编译中”误判与 `ebx_open` 模态框处理；记录 8 控件导入、编译与离线导航验收、文字/变量/地址/JS 边界及 12 项回归测试 |

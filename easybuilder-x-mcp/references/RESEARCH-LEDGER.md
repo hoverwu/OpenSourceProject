@@ -1,6 +1,6 @@
 # EasyBuilder X 情报台账（已核实事实 + 来源）
 
-作者：hoverwu ｜ 版本：0.3.0 ｜ 建立：2026-11-06 ｜ 更新：2026-11-06 ｜ 采集方式：官方站点直取 + 官方手册 PDF 解析 + 官方安装包实测元数据 + 本机 UIA 实测
+作者：hoverwu ｜ 版本：0.4.0 ｜ 建立：2026-11-06 ｜ 更新：2026-11-24 ｜ 采集方式：官方站点直取 + 官方手册 PDF 解析 + 官方安装包实测元数据 + 本机 UIA / 原生 Socket 实测
 
 本文件只记录**已经核实**的事实。任何未实测的推断一律写在末尾并标注"未验证"。
 
@@ -213,3 +213,25 @@ Ribbon 选项卡：**文件 / 常用 / 工程文件 / 元件 / 资料/历史 / I
 | 试跑临时画面删除后工程仍 4 页，保存成功 | del_screen 输出 `[after] ['报警与趋势','主监控','参数设定','手动维护']` |
 | 本机 `NO_PROXY` 含 `[::1]` → httpx `InvalidURL: Invalid port: ':1]'`，客户端须先清空 | 实测报错与修复后 `CLIENT OK` |
 | venv `python.exe` 启动服务出现父子两个同名进程，属正常 | `Get-CimInstance Win32_Process` 显示 ParentProcessId 指向同名进程 |
+
+## 13. 原生 Screen View / AI Socket 与代码生成（2026-11-24）
+
+| 事实 | 证据 |
+| --- | --- |
+| 用户明确授权后启用 `technical_preview` 与 `enable_ebx_socket_server` 两个零字节标记；EBX V1.01.376s 出现 loopback 注册文件与监听 | `%APPDATA%/Weintek/EasyBuilder X/ai-sockets/<pid>.json`；`out/ai_socket/` |
+| Socket 为 NDJSON、一连接一请求；`schema_version` 必须为字符串 `"1.4"`，ping 返回 pong；原生归档 Schema 为 `"1.1"` | `tools/ebx_ai_socket.py`；协议实测输出 |
+| `exportScreenView → detectImportConflicts → importScreenView → getViewByScreenName` 回环约 0.108 s | `out/ai_socket/` 回环证据 |
+| W4 的 8 个 Text/Numeric/Lamp/Button 可导入；冲突检查、导入、读回、导出、诊断约 0.5 s | `out/ai_socket/nobind_import/native_codegen_evidence.json` |
+| `Text.text` / `Button.text` 不接受普通内联文字，只接受字符串库引用/索引引用/null；归档不能嵌入字符串库 | 实时 `displayString` Schema；首次导入拒绝记录 |
+| 省略文字后 8 个控件成功；EBX 自动补字体、填充、边框、默认空事件 | `native_codegen_readback.json`、`native_codegen_export.json` |
+| 缺失 `Variable://Project/<tag>` 保留占位但会阻塞编译 | `validbase_compile_timeout.png`；移除相同绑定后编译成功 |
+| 有效基线编译 6.1 s、无绑定生成页编译 7.1 s；`.ebxobj` 约 81.5 MB | `after_f5_compile.png`；编译工具返回 |
+| “编译中”是非模态进度窗，旧工具误报错误；修复后按产物稳定 + 进度窗关闭判定 | `ebx_mcp_server.py:ebx_compile` |
+| `applyChangeset/set_event` 可设置既有按钮切屏；实体路径为 `报警与趋势/nav_主监控` | `out/ai_socket/set_nav_to_c2.json` |
+| 离线模拟显示生成页，既有按钮可进入 C2，C2 生成按钮可跳转“参数设定” | `offline_sim_c2.png`、`offline_sim_params_from_c2.png` |
+| 模拟器点击必须按白底画面包围盒换算并核对像素区域 | `offline_sim_bottom_zoom.png`、`offline_sim_nav_zoom.png` |
+| 当前转换器按 tag 名生成 `Variable://Project/<tag>`；改 `tags[].address` 不改原生绑定 | `tools/test_ebx_native_codegen.py:test_address_changes_do_not_rewrite_native_tag_reference` |
+| 原生 Socket/转换器与 MCP 模态框共 12 项离线测试 + 验证器 3 项通过 | `python -m unittest discover -s tools -p "test_ebx_*.py"` 等 |
+| `ebx_open` 先处理已有模态框再激活主窗；丢弃按钮前缀匹配支持 `否(N) Alt+N` | `tools/test_ebx_mcp_open.py` |
+
+**未验证**：普通文字与字符串库自动创建；真实变量创建/绑定与地址批量改写；任意复杂画面的完整逆向导出；报警/趋势/动画/宏保真度；其他 EBX 版本/机器；JS Object/Action、require、PLC 读写与 Canvas。
