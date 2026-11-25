@@ -1,10 +1,15 @@
 # -*- coding: utf-8 -*-
-"""把 ebx-screen/1.0 转为 EBX 原生 Screen View 并导入（hoverwu / 0.1.0）。"""
+"""把 ebx-screen/1.0 转为 EBX 原生 Screen View 并安全导入（hoverwu / 0.2.0）。"""
 import argparse
 import json
 import os
 import sys
 import time
+
+try:
+    import jsonschema
+except ImportError:
+    jsonschema = None
 
 if __package__:
     from .ebx_ai_socket import EBXSocket, EBXSocketError, require_ok
@@ -142,12 +147,185 @@ def import_succeeded(imported):
         return False
     if imported.get("unresolved_references") or changeset.get("unresolved_references"):
         return False
-    if changeset.get("missing_references"):
+    if imported.get("missing_references") or changeset.get("missing_references"):
         return False
     return all(
-        operation.get("success", False) and not operation.get("unresolved_references")
+        operation.get("success", False)
+        and not operation.get("unresolved_references")
+        and not operation.get("missing_references")
         for operation in changeset.get("per_operation", [])
     )
+
+
+def load_spec(path, screens=None):
+    validation = validate(path, screens)
+    if not validation["ok"]:
+        return None, {"ok": False, "code": "INVALID_SCREEN_JSON", "validation": validation}
+    with open(path, encoding="utf-8") as f:
+        return json.load(f), validation
+
+
+def prepare_archive(path, screen=None, variable_scope="Project", screens=None, omit_text=False):
+    data, validation = load_spec(path, screens)
+    if data is None:
+        return None, validation
+    try:
+        archive = convert(data, screen, variable_scope, screens, omit_text)
+    except (KeyError, TypeError, ValueError) as exc:
+        return None, {
+            "ok": False,
+            "code": "CONVERSION_FAILED",
+            "message": str(exc),
+            "validation": validation,
+        }
+    return archive, validation
+
+
+def validate_native_schema(archive, schema, schema_version=None):
+    if jsonschema is None:
+        return {
+            "ok": False,
+            "code": "SCHEMA_VALIDATOR_UNAVAILABLE",
+            "message": "缺少 jsonschema 依赖；安装 requirements.txt 后再导入原生画面",
+        }
+    if not isinstance(schema, dict):
+        return {
+            "ok": False,
+            "code": "INVALID_NATIVE_SCHEMA",
+            "message": "实时 Screen View Schema 必须是 JSON 对象",
+            "schema_version": schema_version,
+        }
+    validator_type = jsonschema.validators.validator_for(schema)
+    try:
+        validator_type.check_schema(schema)
+    except jsonschema.SchemaError as exc:
+        return {
+            "ok": False,
+            "code": "INVALID_NATIVE_SCHEMA",
+            "message": str(exc),
+            "schema_id": schema.get("$id"),
+            "schema_version": schema_version or schema.get("schema_version"),
+        }
+    errors = sorted(
+        validator_type(schema).iter_errors(archive),
+        key=lambda error: tuple(str(part) for part in error.absolute_path),
+    )
+    if not errors:
+        return {
+            "ok": True,
+            "validator": validator_type.__name__,
+            "schema_id": schema.get("$id"),
+            "schema_version": schema_version or schema.get("schema_version"),
+        }
+    return {
+        "ok": False,
+        "code": "NATIVE_SCHEMA_VALIDATION_FAILED",
+        "schema_id": schema.get("$id"),
+        "schema_version": schema_version or schema.get("schema_version"),
+        "error_count": len(errors),
+        "errors": [
+            {
+                "path": "/".join(str(part) for part in error.absolute_path) or "$",
+                "message": error.message,
+            }
+            for error in errors[:20]
+        ],
+    }
+
+
+def import_archive(client, archive, evidence_dir=None, dry_run=False):
+    screen_name = archive["body"]["screens"][0]["name"]
+    started = time.perf_counter()
+    evidence = {
+        "screen": screen_name,
+        "dry_run": dry_run,
+        "conflicts": None,
+        "schema": None,
+        "import": None,
+        "verification": None,
+        "verification_full": None,
+        "diagnostics": None,
+    }
+
+    def finish(code=None, message=None):
+        evidence["elapsed_seconds"] = round(time.perf_counter() - started, 3)
+        if evidence_dir:
+            os.makedirs(evidence_dir, exist_ok=True)
+            write_json(os.path.join(evidence_dir, "native_codegen_archive.json"), archive)
+            write_json(os.path.join(evidence_dir, "native_codegen_evidence.json"), evidence)
+            for key, filename in (
+                ("readback", "native_codegen_readback.json"),
+                ("exported", "native_codegen_export.json"),
+            ):
+                if evidence.get(key) is not None:
+                    write_json(os.path.join(evidence_dir, filename), evidence[key])
+        result = dict(evidence)
+        if code:
+            result.update({"ok": False, "code": code})
+            if message:
+                result["message"] = message
+        elif dry_run:
+            result.update({"ok": True, "code": "DRY_RUN_OK"})
+        else:
+            result["ok"] = bool(
+                import_succeeded(evidence["import"] or {})
+                and (evidence["verification"] or {}).get("ok")
+                and (evidence["verification_full"] or {}).get("ok")
+            )
+            result["code"] = "IMPORT_OK" if result["ok"] else "READBACK_MISMATCH"
+        return result
+
+    try:
+        schema_response = client.call("getScreenViewJsonSchema", {})
+        schema = require_ok(schema_response)
+        evidence["schema"] = validate_native_schema(
+            archive, schema, schema_response.get("schema_version"))
+    except EBXSocketError as exc:
+        return finish("SCHEMA_FETCH_FAILED", str(exc))
+    if not evidence["schema"]["ok"]:
+        return finish(evidence["schema"]["code"], evidence["schema"].get("message"))
+
+    try:
+        evidence["conflicts"] = require_ok(
+            client.call("detectImportConflicts", {"archive": archive})
+        )
+    except EBXSocketError as exc:
+        return finish("CONFLICT_CHECK_FAILED", str(exc))
+    conflicts = evidence["conflicts"]
+    if conflicts.get("has_conflicts") or conflicts.get("conflict_count"):
+        return finish(
+            "IMPORT_CONFLICT",
+            "目标画面名已存在或归档含冲突；未执行导入。请改用 ebx_native_patch_apply 修改既有画面。",
+        )
+    if dry_run:
+        return finish()
+
+    try:
+        evidence["import"] = require_ok(client.call("importScreenView", {"archive": archive}))
+    except EBXSocketError as exc:
+        return finish("IMPORT_FAILED", str(exc))
+    if not import_succeeded(evidence["import"]):
+        return finish("IMPORT_FAILED", "原生导入未完整成功；已保留证据，请检查未解析/缺失引用与逐项结果。")
+
+    try:
+        evidence["readback"] = require_ok(
+            client.call("getViewByScreenName", {"screen_name": screen_name})
+        )
+        evidence["exported"] = require_ok(
+            client.call("exportScreenView", {"screen_name": screen_name})
+        )
+        evidence["diagnostics"] = require_ok(client.call("getDiagnostics", {}))
+    except EBXSocketError as exc:
+        return finish("READBACK_FAILED", str(exc))
+
+    evidence["verification"] = verify_readback(evidence["readback"], archive)
+    full_screens = evidence["exported"].get("archive", {}).get("body", {}).get("screens", [])
+    matching = [screen for screen in full_screens if screen.get("name") == screen_name]
+    if matching:
+        evidence["verification_full"] = verify_readback({"screen": matching[0]}, archive)
+    else:
+        evidence["verification_full"] = {"ok": False, "errors": ["完整导出中未找到目标画面"]}
+    return finish()
 
 
 def write_json(path, data):
@@ -166,54 +344,36 @@ def main():
     parser.add_argument("--omit-text", action="store_true", help="原生 Schema 不接受内联文字时省略文字")
     parser.add_argument("--port", type=int)
     parser.add_argument("--import", action="store_true", dest="do_import")
+    parser.add_argument("--dry-run", action="store_true", help="获取实时 Schema 并检查冲突，但不写入 EBX")
     parser.add_argument("--evidence-dir", default="out/ai_socket")
     args = parser.parse_args()
     screens = None if args.screens is None else {x.strip() for x in args.screens.split(",") if x.strip()}
-    validation = validate(args.input, screens)
-    if not validation["ok"]:
+    try:
+        archive, validation = prepare_archive(
+            args.input, args.screen, args.variable_scope, screens, args.omit_text
+        )
+    except (OSError, json.JSONDecodeError) as exc:
+        print("[ERR] %s" % exc, file=sys.stderr)
+        return 2
+    if archive is None:
         print(json.dumps(validation, ensure_ascii=False, indent=2))
         return 2
-    with open(args.input, encoding="utf-8") as f:
-        data = json.load(f)
     try:
-        archive = convert(data, args.screen, args.variable_scope, screens, args.omit_text)
-    except ValueError as exc:
-        print("[ERR] %s" % exc)
-        return 2
-    output = args.output or os.path.join(os.path.dirname(args.input), "native.archive.json")
-    write_json(output, archive)
-    print(json.dumps({"ok": True, "archive": output, "objects": len(archive["body"]["screens"][0]["objects"])}, ensure_ascii=False))
-    if not args.do_import:
-        return 0
-    client = EBXSocket(args.port)
-    screen_name = archive["body"]["screens"][0]["name"]
-    os.makedirs(args.evidence_dir, exist_ok=True)
-    started = time.perf_counter()
-    try:
-        conflicts = require_ok(client.call("detectImportConflicts", {"archive": archive}))
-        imported = require_ok(client.call("importScreenView", {"archive": archive}))
-        readback = require_ok(client.call("getViewByScreenName", {"screen_name": screen_name}))
-        exported = require_ok(client.call("exportScreenView", {"screen_name": screen_name}))
-        diagnostics = require_ok(client.call("getDiagnostics", {}))
-    except EBXSocketError as exc:
+        output_stem = os.path.splitext(os.path.basename(args.input))[0]
+        if output_stem.endswith(".screen"):
+            output_stem = output_stem[:-7]
+        output = args.output or os.path.join("out", "ai_socket", output_stem + ".native.json")
+        os.makedirs(os.path.dirname(output) or ".", exist_ok=True)
+        write_json(output, archive)
+    except OSError as exc:
         print("[ERR] %s" % exc, file=sys.stderr)
-        return 1
-    elapsed = time.perf_counter() - started
-    verification = verify_readback(readback, archive)
-    evidence = {
-        "screen": screen_name,
-        "elapsed_seconds": round(elapsed, 3),
-        "conflicts": conflicts,
-        "import": imported,
-        "verification": verification,
-        "diagnostics": diagnostics,
-    }
-    write_json(os.path.join(args.evidence_dir, "native_codegen_evidence.json"), evidence)
-    write_json(os.path.join(args.evidence_dir, "native_codegen_readback.json"), readback)
-    write_json(os.path.join(args.evidence_dir, "native_codegen_export.json"), exported)
-    import_ok = import_succeeded(imported)
-    print(json.dumps(evidence, ensure_ascii=False, indent=2))
-    return 0 if verification["ok"] and import_ok else 1
+        return 2
+    print(json.dumps({"ok": True, "archive": output, "objects": len(archive["body"]["screens"][0]["objects"])}, ensure_ascii=False))
+    if not args.do_import and not args.dry_run:
+        return 0
+    result = import_archive(EBXSocket(args.port), archive, args.evidence_dir, args.dry_run)
+    print(json.dumps(result, ensure_ascii=False, indent=2))
+    return 0 if result.get("ok") else 1
 
 
 if __name__ == "__main__":

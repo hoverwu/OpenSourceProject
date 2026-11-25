@@ -1,6 +1,6 @@
 # EasyBuilder X 情报台账（已核实事实 + 来源）
 
-作者：hoverwu ｜ 版本：0.7.0 ｜ 建立：2026-11-06 ｜ 更新：2026-11-25 ｜ 采集方式：官方站点直取 + 官方手册 PDF 解析 + 官方安装包实测元数据 + 本机 UIA / 原生 Socket 实测
+作者：hoverwu ｜ 版本：0.8.1 ｜ 建立：2026-11-06 ｜ 更新：2026-11-25 ｜ 采集方式：官方站点直取 + 官方手册 PDF 解析 + 官方安装包实测元数据 + 本机 UIA / 原生 Socket 实测
 
 本文件只记录**已经核实**的事实。任何未实测的推断一律写在末尾并标注"未验证"。
 
@@ -119,8 +119,8 @@ Ribbon 选项卡：**文件 / 常用 / 工程文件 / 元件 / 资料/历史 / I
 
 ### 9.1 专用服务器
 
-- `ebx_mcp_server.py`（FastMCP HTTP，`127.0.0.1:8788`，普通权限），`start-ebx-mcp.bat` 启动，`ebx-mcp-smoke-test.py` 自检；当前 29 个 `ebx_*` 领域工具（v0.5.0；v0.4.0 时为 26 个，初版 18）。
-- 工具清单：status / launch / windows / tree / find / click_name / click_xy / ribbon / ribbon_map / screenshot / keys / save_as / open / new_project / compile / offline_simulate / stop_simulation / artifacts / screen_list / screen_open / screen_elements / uia_dump / import_screen_json / import_status / native_patch_capture / native_patch_apply / native_clone_screen / native_query_objects / native_snapshot。
+- `ebx_mcp_server.py`（FastMCP HTTP，`127.0.0.1:8788`，普通权限），`start-ebx-mcp.bat` 启动，`ebx-mcp-smoke-test.py` 自检；当前 31 个注册工具、4 个常驻入口（v0.6.0；v0.5.0 时为 29 个平铺工具）。
+- 工具清单：status / launch / windows / tree / find / click_name / click_xy / ribbon / ribbon_map / screenshot / keys / save_as / open / new_project / compile / offline_simulate / stop_simulation / artifacts / screen_list / screen_open / screen_elements / uia_dump / import_screen_json / import_status / native_generate / native_import / native_patch_capture / native_patch_apply / native_clone_screen / native_query_objects / native_snapshot；目录/检索/代理由 `ebx_catalog / ebx_find_tools / ebx_call_tool` 提供，不计入领域工具数。
 - 与通用 `uiautomation-mcp`（8786，9 工具）并存，专用版把坐标地图与对话框 ID 固化，减少每次探索。
 
 ### 9.2 工具实测结果
@@ -146,15 +146,15 @@ Ribbon 选项卡：**文件 / 常用 / 工程文件 / 元件 / 资料/历史 / I
 
 ### 9.5 页面 JSON 导入/导出（2026-11-06 核实）
 
-- **官方无页面级 JSON**：文件菜单仅新建/打开/保存/另存为/关闭/反编译/语言/偏好设置/关于；打开对话框仅 `*.ebxprj`/`*.ebxobj`；反编译只做 `.ebxobj → .ebxprj`。
+- **公开页面级 JSON 规范未找到**：文件菜单仅新建/打开/保存/另存为/关闭/反编译/语言/偏好设置/关于；打开对话框仅 `*.ebxprj`/`*.ebxobj`；反编译只做 `.ebxobj → .ebxprj`。2026-11-25 官方资料复核未找到完整 Screen View JSON / AI Socket 规范，见 §14。
 - 官方全部导入导出：字符串表 `.csv/.xls/.xlsx`（运行时 `.txt`）、宏指令 `.ebm`、审计 CSV、图片。手册中 JSON 仅出现在授权/证书/设备错误码，与画面无关。
 - 替代路径：JSON→EBX 用 UIA 驱动（已验证放元件/改属性原语）；EBX→JSON 用检视面板枚举画面 + 元件面板枚举元件 + 属性面板/状态栏回读（适合清单/审计，不是备份）；自定义模板仍是加密工程内对象，不能导出 JSON。
 
 ### 9.6 固化产物
 
-- 知识手册：`EASYBUILDERX-UIA-AGENT-GUIDE.md`（当前 v0.4.0，活文档，含更新记录与更新协议）。
-- 方案：`EBX-MCP-CONTROL-PLAN.md`（当前 v1.8.0，含 §11.1 UIA 页面通道、§12.1 原生增量补丁与 §12.3 原生复用）。
-- Skill：源稿 `SKILL.md`（与 MCP 同目录，作者 hoverwu，当前 v0.7.0，29 工具 + UIA 树模型 + 补丁/复用配方）；部署副本 `%USERPROFILE%\.qoder-cn\skills\easybuilder-x-mcp\SKILL.md`，用 `tools\sync_skill.py` 同步、`--check` 校验。
+- 知识手册：`EASYBUILDERX-UIA-AGENT-GUIDE.md`（当前 v0.5.1，活文档，含更新记录与更新协议）。
+- 方案：`EBX-MCP-CONTROL-PLAN.md`（当前 v1.9.1，含 §11.1 UIA 页面通道、§12.1 原生增量补丁、§12.3 原生复用与 §12.4 规范/安全门）。
+- Skill：源稿 `SKILL.md`（与 MCP 同目录，作者 hoverwu，当前 v0.8.1，31 注册工具 / 4 常驻入口 + UIA 树模型 + 补丁/复用配方）；部署副本为 `%USERPROFILE%\.qoder-cn\skills\easybuilder-x-mcp\`，用 `tools\sync_skill.py` 同步 `SKILL.md` 与 `references/` 三份手册，`--check` 对四份文件逐一校验 SHA-256。
 - 更新协议：新知识 → 手册对应小节 + 更新记录 → 必要时加 MCP 工具并自检 → 同步 Skill / 方案 / 本台账；未实测只进"未验证边界"。
 
 ## 10. 按钮导航 / 切换画面 / 启动页（2026-11-07 实测）
@@ -285,3 +285,31 @@ Ribbon 选项卡：**文件 / 常用 / 工程文件 / 元件 / 资料/历史 / I
 **仍未验证**：字符串表最小 round-trip、异构元件地址批量修改、受支持驱动的标签导入矩阵、跨工程模板保真度、复杂控件与群组增量补丁。
 
 **未验证**：字符串库/Project 变量自动创建；设备 URI 直接回导与 `tags[].address` 批量改写；任意复杂画面的完整逆向导出；报警/趋势/动画/宏保真度；其他 EBX 版本/机器；JS Object/Action、require、PLC 读写与 Canvas。
+
+## 14. 官方 JSON 规范核查、安全导入与分层 MCP（2026-11-25）
+
+| 事实 | 证据 |
+| --- | --- |
+| 未找到威纶通公开的完整 EasyBuilder X Screen View JSON / AI Socket 格式规范 | 官方产品页 `https://www.weinview.cn/EasyBuilderX`、操作手册列表 `https://www.weinview.cn/czsc`、软件列表 `https://www.weinview.cn/rj`、文件菜单教学 `https://www.bilibili.com/video/BV1r2HF64Edz`、物件导向设计 `https://www.weinview.cn/cpdt/3654.html` |
+| 官方公开材料能证明对象属性/事件/方法、按钮事件、字符串表、模拟等能力，但不能证明本工具的归档字段与 Socket 方法 | 官方手册与产品资料；手册全文未完成完整核验，因此只结论为“未找到”，不结论为“不存在” |
+| 本机 `getScreenViewJsonSchema` 返回 Draft 2020-12，`$id=https://weintek.local/schema/screen-view.schema.json`，接受归档 `"1.1"`/`"1.0"` | `out/ai_socket/getScreenViewJsonSchema.json`；`jsonschema.validators.validator_for()` 选择 Draft202012Validator |
+| Socket 响应 envelope 的 `schema_version` 是字符串 `"1.4"`；归档版本是 `header.schemaVersion` | 原始 Socket 响应；首次转换器只取 result，误记 null，现已保留 envelope |
+| 四个已保存原生归档通过实时 Schema；当前 Text/Numeric/Lamp/Button 映射未发现结构格式错误 | `out/ai_socket/*.native.json` 与实时 Schema 离线校验 |
+| 旧转换器检测冲突后仍可能导入，而本机同名导入会创建 `名称 (2)` | 原生导入实测；`detectImportConflicts` 与导入调用顺序审计 |
+| 修复后 `has_conflicts` 或 `conflict_count` 非零即返回 `IMPORT_CONFLICT`，不执行导入；dry-run 不写 EBX | `tools/ebx_native_codegen.py:import_archive`；冲突与 dry-run 回归测试 |
+| 原生导入缺 `jsonschema` 时 fail-closed；实时 Schema 本身也先 `check_schema()` | `validate_native_schema()`；依赖缺失与非法 Schema 回归测试 |
+| 成功判定同时检查顶层、Changeset、操作级 success 和未解析/缺失引用；之后双重回读 | `import_succeeded()`、`getViewByScreenName`、完整 `exportScreenView`；假成功与回读不符回归测试 |
+| 新增 `ebx_native_generate` / `ebx_native_import` MCP 薄封装；生成不连接 EBX | `ebx_mcp_server.py`；MCP native 测试 |
+| MCP v0.6.0 共 31 个注册工具，`tools/list` 仅 4 个入口；七领域打标签，旧名直调仍可用 | 隔离 HTTP 服务、`ebx-mcp-smoke-test.py`、`tools/test_ebx_mcp_catalog.py`、`tools/test_ebx_native_codegen_mcp.py` |
+| 初始工具目录序列化字节 11,793 → 1,664，减少 85.9%；不等于实际 Token/账单降幅 | 对 31 个注册工具与 4 个可见工具的 name/description/input_schema/output_schema JSON 字节求和 |
+| 内置 BM25 对中文不足，因此增加中文别名和评分；精确名 > 前缀 > 子串 > 别名 > 描述/参数/领域 | `tools/ebx_mcp_catalog.py:TOOL_ALIASES`；“增量补丁”首条必须命中 patch apply 的回归测试 |
+| 完整离线回归 75 项 EBX + 4 项验证器通过 | `python -m unittest discover -s tools -p "test_ebx_*.py"` 与 validator 测试 |
+| 真实 dry-run 对既有画面 `C2_有效工程验证` 返回 Schema 有效、`IMPORT_CONFLICT`，未执行导入 | `out/ai_socket/p8_dryrun/native_codegen_evidence.json` |
+
+**仍未验证**：其他 EBX 版本的预览 Schema、原生导入的事务性、完整复杂对象保真度、公开规范是否存在于未公开/后续官方渠道。
+
+## 15. Skill 部署同步修复（2026-11-25）
+
+- 旧 `tools/sync_skill.py` 只复制 `SKILL.md`，受保护部署目录没有 `references/`，因此 Skill 中指向 Guide、方案和台账的事实源路径不可用。
+- 同步脚本升级为 0.2.0：同时复制 `SKILL.md` 与三份 references；支持项目根目录开发布局和发布包 `references/` 布局；复制后对四个文件逐一校验 SHA-256。
+- 新增 3 项离线测试，覆盖开发布局、发布布局与部署漂移检测；当前完整离线回归为 75 项 EBX + 4 项验证器 = 79 项。

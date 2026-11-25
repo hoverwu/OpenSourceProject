@@ -1,12 +1,27 @@
 # EasyBuilder X MCP + Skill
 
-作者 hoverwu · 版本 0.7.0（MCP 服务器 0.5.0，29 个工具）· 实测版本 EasyBuilder X V1.01.376s
+作者 hoverwu · 版本 0.8.1（MCP 服务器 0.6.0，31 个注册工具 / 4 个常驻入口）· 实测版本 EasyBuilder X V1.01.376s
 
 用 Windows UIA 与本机 Screen View 技术预览控制威纶通 / 威纶（WEINVIEW / Weintek）**EasyBuilder X**（EBX）HMI 组态软件，提供画面 JSON 生成、校验、导入、增量补丁与验收工具。
 
 > EBX 没有公开承诺的稳定 API：没有 COM/SDK/插件，`.ebxprj` 是加密二进制容器。通用可控入口是 Windows UIA；Ribbon 与画布不可见，只能按窗口内坐标操作。另一个快速入口是 V1.01.376s 本机技术预览，但不得当成官方稳定接口。
 
-## 三条制图路线
+## 官方 JSON 规范核查
+
+截至 2026-11-25，在威纶通官方产品页、教学、操作手册列表与软件列表中**未找到公开的完整 Screen View JSON 或 AI Socket 规范**。官方物料证实 EBX 的物件属性/事件/方法、按钮事件与原生模拟流程，但没有定义本工具使用的 `header.schemaVersion`、`body.screens`、控件类型枚举或 Socket 方法名。
+
+因此，本仓库的 `ebx-screen/1.0`、`ebx-native-patch/1.0` 都是自制格式；原生 Screen View 归档是 **V1.01.376s 本机技术预览的运行时契约**，不是官方承诺的稳定 API。每次导入会向 EBX 获取实时 `getScreenViewJsonSchema`，以该版本返回的 Schema 做写前校验。
+
+官方参考：
+
+- [EasyBuilder X 产品页](https://www.weinview.cn/EasyBuilderX)
+- [文件菜单教学（2026-10-27）](https://www.bilibili.com/video/BV1r2HF64Edz)
+- [物件导向设计与自定义模板（2026-11-20）](https://www.weinview.cn/cpdt/3654.html)
+- [操作手册列表（2026-09-16）](https://www.weinview.cn/czsc) / [软件列表](https://www.weinview.cn/rj)
+
+手册全文与更新说明正文未完成完整核验，因此结论是“未找到公开规范”，不是“功能不存在”。EasyBuilder Pro 的 AI 助理资料不能作为 EasyBuilder X AI Socket 的证据。
+
+## 四条制图路线
 
 | 路线 | 用途 | 实测 |
 | --- | --- | --- |
@@ -35,21 +50,22 @@
 easybuilder-x-mcp/
   SKILL.md                       Agent 主入口：能力边界、配方、坑与验证流程
   README.md                      本文件
-  ebx_mcp_server.py              FastMCP HTTP 服务器，29 个 ebx_* 工具
+  ebx_mcp_server.py              FastMCP HTTP 服务器，31 个注册工具 / 4 个常驻入口
   start-ebx-mcp.bat              一键启动（普通权限，无需 UAC）
-  ebx-mcp-smoke-test.py          只读自检
-  requirements.txt               uiautomation / fastmcp / pillow
+  ebx-mcp-smoke-test.py          分层目录与只读工具自检
+  requirements.txt               uiautomation / fastmcp / pillow / jsonschema
   tools/
     ebx_ai_socket.py             原生预览 Socket 客户端（注册发现 + NDJSON）
     ebx_native_codegen.py        紧凑 JSON → 原生 Screen View，导入并回读验证
     ebx_native_patch.py          既有画面增量补丁：capture/dry-run/apply/回滚
     ebx_native_reuse.py          画面克隆、轻量对象查询与原生 PNG 快照
+    ebx_mcp_catalog.py           分层目录、中文/英文检索与工具代理
     ebx_screen_importer.py       UIA 逐元件重建
     ebx_layout.py                MCP 与导入器共用 Ribbon 坐标
     validate_screen_json.py      画面 JSON 校验
     export_screen_json.py        已有 spec → ebx-screen/1.0 JSON
     mcp_call_once.py             命令行调用 MCP 工具
-    sync_skill.py                部署 Skill 并校验 sha256
+    sync_skill.py                同步 Skill + references 并校验 SHA-256
     test_ebx_*.py                原生协议/转换/补丁/MCP 离线测试
     test_validate_screen_json.py 验证器回归测试
     del_screen.py                按名字删除画面
@@ -100,25 +116,35 @@ python ebx-mcp-smoke-test.py 8788
 
 解释器优先级：`PYTHON` 环境变量 → 目录内 `.venv` / `venv` → PATH 里的 `python`。
 
-## 29 个 MCP 工具
+## 分层 MCP 调用
 
-| 场景 | 工具 |
+`tools/list` 只返回 4 个常驻入口，避免把 31 个完整参数 Schema 全部塞进模型上下文。按工具名、描述、输入/输出 Schema 的 JSON 序列化字节实测：11,793 → 1,664 B，初始目录负载减少 **85.9%**；这是字节口径，不等于账单或实际 Token 精确降幅。
+
+| 入口 | 用途 |
 | --- | --- |
-| 状态 / 启动 | `ebx_status` / `ebx_launch` |
-| 窗口 / 树 / 查找 | `ebx_windows` / `ebx_tree` / `ebx_find` |
-| UIA 结构导出 | `ebx_uia_dump(scope=main\|dialogs\|popups\|all)` |
-| 点击 | `ebx_click_name` / `ebx_click_xy` / `ebx_ribbon` |
-| 截图 / 坐标图 | `ebx_screenshot` / `ebx_ribbon_map` |
-| 按键 | `ebx_keys("ctrl+s")` |
-| 工程 | `ebx_new_project` / `ebx_save_as` / `ebx_open` |
-| 画面 | `ebx_screen_list` / `ebx_screen_open` / `ebx_screen_elements` |
-| 页面 JSON | `ebx_import_screen_json` / `ebx_import_status` |
-| 原生增量补丁 | `ebx_native_patch_capture` / `ebx_native_patch_apply` |
-| 原生复用 / 验收 | `ebx_native_clone_screen` / `ebx_native_query_objects` / `ebx_native_snapshot` |
-| 编译 / 模拟 | `ebx_compile` / `ebx_offline_simulate` / `ebx_stop_simulation` |
-| 产物核验 | `ebx_artifacts` |
+| `ebx_status` | 查看 EBX 进程、主窗口、工程与监听端口 |
+| `ebx_catalog(domain="", tool="")` | 无参数看领域总览；给领域看工具摘要；给精确工具名看完整输入/输出 Schema |
+| `ebx_find_tools(query, domain="", limit=6)` | 中文子串、英文别名、精确工具名与参数名检索，返回紧凑 Markdown |
+| `ebx_call_tool(name, arguments)` | 通过 FastMCP 正常调用链执行查到的工具 |
 
-原生预览客户端与转换器仍是独立脚本；MCP 提供补丁 capture/apply 与克隆/查询/快照薄封装，不重复实现协议逻辑，也不自动启用预览。Socket 客户端在首次解析后缓存端口；连接失败时清除自动解析的端口，下一次调用才重新发现实例。
+推荐调用顺序：
+
+1. `ebx_catalog()` 查看 7 个领域与工具数量。
+2. `ebx_find_tools("增量补丁")` 或 `ebx_catalog(domain="native")` 定位工具。
+3. `ebx_catalog(tool="ebx_native_patch_apply")` 获取完整参数 Schema。
+4. `ebx_call_tool(name="ebx_native_patch_apply", arguments={...})` 执行。
+
+| 领域 | 能力 |
+| --- | --- |
+| `project` | 状态、启动、新建、打开、另存为、产物 |
+| `observe` | 窗口、UIA 树、查找、结构导出、截图、Ribbon 地图 |
+| `screen` | 画面枚举、切换与元件列表 |
+| `native` | 原生生成/导入、dry-run、补丁、克隆、查询、快照 |
+| `uia` | 语义点击、坐标点击、Ribbon、真实按键 |
+| `legacy_json` | 无预览时的 UIA 慢速整页重建 |
+| `build` | 编译、离线模拟与停止 |
+
+31 个原 `ebx_*` 工具仍已注册，旧客户端可以继续按原名直接调用；代理不会改变权限、校验或返回语义。原生预览客户端与转换器复用同一套 Python 实现，MCP 只提供薄封装，不自动启用预览。Socket 客户端在首次解析后缓存端口；连接失败时清除自动解析的端口，下一次调用才重新发现实例。
 
 ## 原生快速导入样例
 
@@ -128,10 +154,13 @@ python ebx-mcp-smoke-test.py 8788
 cd /d "<本目录>"
 python tools\validate_screen_json.py examples\C2_Native_Sample.screen.json --screens 参数设定
 python tools\ebx_native_codegen.py examples\C2_Native_Sample.screen.json --screens 参数设定 --omit-text --output out\C2.native.json
-python tools\ebx_native_codegen.py examples\C2_Native_Sample.screen.json --screens 参数设定 --omit-text --import --evidence-dir out\C2_import
+python tools\ebx_native_codegen.py examples\C2_Native_Sample.screen.json --screens 参数设定 --screen 新画面名 --omit-text --dry-run --evidence-dir out\C2_dryrun
+python tools\ebx_native_codegen.py examples\C2_Native_Sample.screen.json --screens 参数设定 --screen 新画面名 --omit-text --import --evidence-dir out\C2_import
 ```
 
-导入后检查冲突、回读、事件与诊断，再编译和离线模拟。含不存在变量的页面可能导入成功但编译停滞，不要只看导入结果。
+写前流程固定为：获取 EBX 实时 Schema → Draft 2020-12 校验 → 冲突检测 → 严格导入结果检查 → `getViewByScreenName` 与完整 `exportScreenView` 双重回读 → 诊断。Schema 不合法、依赖缺失或存在冲突时直接返回 `NATIVE_SCHEMA_VALIDATION_FAILED`、`SCHEMA_VALIDATOR_UNAVAILABLE` 或 `IMPORT_CONFLICT`，不会继续导入。dry-run 只做校验和冲突检测，不写 EBX。
+
+导入后仍应编译和离线模拟。含不存在变量的页面可能导入成功但编译停滞，不要只看导入结果。MCP 可用 `ebx_native_generate` 离线生成、`ebx_native_import(dry_run=True)` 预检、`ebx_native_import` 正式导入。
 
 ## 既有画面增量补丁
 
@@ -153,10 +182,10 @@ python tools\ebx_native_patch.py apply out\监控.patch.json
 cd /d "<本目录>"
 python -m unittest discover -s tools -p "test_ebx_*.py"
 python -m unittest discover -s tools -p "test_validate_screen_json.py"
-python -m py_compile ebx_mcp_server.py tools\ebx_ai_socket.py tools\ebx_native_codegen.py tools\ebx_native_patch.py tools\ebx_native_reuse.py
+python -m py_compile ebx_mcp_server.py tools\ebx_ai_socket.py tools\ebx_mcp_catalog.py tools\ebx_native_codegen.py tools\ebx_native_patch.py tools\ebx_native_reuse.py
 ```
 
-当前完整离线回归共 61 项通过。不要对 `tools/` 使用宽泛 `test_*.py` 发现；生产包只保留纯离线测试。
+当前完整离线回归共 79 项通过（75 项 EBX + 4 项验证器）。不要对 `tools/` 使用宽泛 `test_*.py` 发现；生产包只保留纯离线测试。
 
 ## 安全与边界
 

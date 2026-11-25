@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 """
 ebx_mcp_server.py - EasyBuilder X 专用 MCP 服务器（UIA + 坐标地图）
-author: hoverwu  version: 0.5.0  date: 2026-11-25
+author: hoverwu  version: 0.6.0  date: 2026-11-25
 
 定位：不是通用 uiautomation-mcp 的换皮，而是把 EBX 实测出来的
       「Ribbon 坐标地图 + 面板 UIA 语义 + 原生对话框 AutomationId」
@@ -60,6 +60,7 @@ import time
 import glob
 import ctypes
 import ctypes.wintypes as wt
+from pathlib import Path
 import subprocess
 
 from tools.ebx_layout import RIBON
@@ -70,6 +71,12 @@ from tools.ebx_native_reuse import (
     query_objects as native_query_objects,
     capture_snapshot as native_capture_snapshot,
 )
+from tools.ebx_native_codegen import (
+    prepare_archive as native_prepare_archive,
+    import_archive as native_import_archive,
+    write_json as native_write_json,
+)
+from tools.ebx_mcp_catalog import EBXCatalogTransform
 
 
 try:
@@ -106,7 +113,59 @@ EBX_EXE_CANDIDATES = ([EBX_EXE] if EBX_EXE else []) + [
     )
 ]
 
-mcp = FastMCP("easybuilder-x")
+mcp = FastMCP(
+    "easybuilder-x",
+    instructions=(
+        "仅 4 个入口常驻：ebx_status、ebx_catalog、ebx_find_tools、ebx_call_tool。"
+        "先用 ebx_catalog 查看领域，再用 ebx_find_tools 按中文/英文检索，"
+        "需要参数时用 ebx_catalog(tool=...) 获取完整 Schema，最后用 ebx_call_tool 执行。"
+        "旧 ebx_* 工具名仍可直接调用。"
+    ),
+)
+
+
+TOOL_DOMAINS = {
+    "ebx_ribbon_map": "observe",
+    "ebx_status": "project",
+    "ebx_launch": "project",
+    "ebx_windows": "observe",
+    "ebx_tree": "observe",
+    "ebx_find": "observe",
+    "ebx_screen_list": "screen",
+    "ebx_screen_open": "screen",
+    "ebx_screen_elements": "screen",
+    "ebx_uia_dump": "observe",
+    "ebx_import_screen_json": "legacy_json",
+    "ebx_import_status": "legacy_json",
+    "ebx_native_generate": "native",
+    "ebx_native_import": "native",
+    "ebx_native_patch_capture": "native",
+    "ebx_native_patch_apply": "native",
+    "ebx_native_clone_screen": "native",
+    "ebx_native_query_objects": "native",
+    "ebx_native_snapshot": "native",
+    "ebx_click_name": "uia",
+    "ebx_click_xy": "uia",
+    "ebx_ribbon": "uia",
+    "ebx_screenshot": "observe",
+    "ebx_keys": "uia",
+    "ebx_save_as": "project",
+    "ebx_open": "project",
+    "ebx_new_project": "project",
+    "ebx_compile": "build",
+    "ebx_offline_simulate": "build",
+    "ebx_stop_simulation": "build",
+    "ebx_artifacts": "project",
+}
+
+
+def ebx_tool(**kwargs):
+    def decorator(fn):
+        domain = TOOL_DOMAINS.get(fn.__name__)
+        if domain is None:
+            raise ValueError("未设置工具领域: %s" % fn.__name__)
+        return mcp.tool(tags={"domain:" + domain}, **kwargs)(fn)
+    return decorator
 
 
 # ----------------------------------------------------------------- 基础工具
@@ -882,7 +941,7 @@ def _related_processes():
 
 
 # ================================================================= MCP 工具
-@mcp.tool()
+@ebx_tool()
 def ebx_ribbon_map() -> dict:
     """返回 EasyBuilder X 的 Ribbon / 文件后台坐标地图（窗口内坐标，y 为页签行/按钮行）。
     注意：坐标随窗口位置、DPI、Ribbon 折叠状态变化，使用前建议先 ebx_screenshot 复核。"""
@@ -897,7 +956,7 @@ def ebx_ribbon_map() -> dict:
     }
 
 
-@mcp.tool()
+@ebx_tool()
 def ebx_status() -> dict:
     """EBX 运行状态：主窗口是否存在、标题/工程名/矩形/是否前台，相关进程与监听端口。"""
     _ensure_uia_thread()
@@ -919,7 +978,7 @@ def ebx_status() -> dict:
     return data
 
 
-@mcp.tool()
+@ebx_tool()
 def ebx_launch(wait_seconds: int = 30) -> dict:
     """启动 EasyBuilder X（普通权限）。已运行则直接返回窗口信息。"""
     _ensure_uia_thread()
@@ -942,7 +1001,7 @@ def ebx_launch(wait_seconds: int = 30) -> dict:
     return {"started": False, "error": "启动超时（%ds）" % wait_seconds}
 
 
-@mcp.tool()
+@ebx_tool()
 def ebx_windows(include_related: bool = False) -> list:
     """列出 EBX 进程全部可见顶层窗口（含 #32770 对话框、独立弹窗）。
     include_related=True 时连模拟器（cMTRemote/com-x/dserver-x/诊断器）的窗口一起列出。"""
@@ -961,7 +1020,7 @@ def ebx_windows(include_related: bool = False) -> list:
     return out
 
 
-@mcp.tool()
+@ebx_tool()
 def ebx_tree(max_depth: int = 8, max_lines: int = 600) -> str:
     """导出 EBX 全部顶层窗口的 UIA 树（文本）。对话框不在主窗子树里，本工具已跨窗口枚举。"""
     _ensure_uia_thread()
@@ -986,7 +1045,7 @@ def ebx_tree(max_depth: int = 8, max_lines: int = 600) -> str:
     return "\n".join(lines)
 
 
-@mcp.tool()
+@ebx_tool()
 def ebx_find(pattern: str, max_results: int = 100) -> list:
     """按正则搜索 Name / AutomationId / ClassName（大小写不敏感），返回类型/名称/矩形/是否离屏。"""
     _ensure_uia_thread()
@@ -997,7 +1056,7 @@ def ebx_find(pattern: str, max_results: int = 100) -> list:
     return _find_elements(rx, max_results)
 
 
-@mcp.tool()
+@ebx_tool()
 def ebx_screen_list() -> dict:
     """列出画面树（左侧检视面板）里的全部画面及行坐标，并给出当前打开的画面。
     返回的 y 是该行在屏幕上的纵坐标，双击行可打开；顺序即导航下拉与创建顺序。"""
@@ -1016,7 +1075,7 @@ def ebx_screen_list() -> dict:
     }
 
 
-@mcp.tool()
+@ebx_tool()
 def ebx_screen_open(name: str) -> dict:
     """双击画面树里的某个画面，把它打开到编辑器（已打开则只切页签）。不修改内容。"""
     _ensure_uia_thread()
@@ -1044,7 +1103,7 @@ def ebx_screen_open(name: str) -> dict:
             "hint": "双击后属性面板「名称」未变成目标；确认画面未被模态框挡住"}
 
 
-@mcp.tool()
+@ebx_tool()
 def ebx_screen_elements() -> list:
     """列出当前画面「元件」面板里的元件行（名称 + 行坐标）。画布本身 0 个 UIA 节点，
     这是唯一可读的元件入口；元件 dock 没有 TabControl，按左区最后一个 TreeControl 识别。"""
@@ -1055,7 +1114,7 @@ def ebx_screen_elements() -> list:
     return _left_panel_rows(w, "元件")
 
 
-@mcp.tool()
+@ebx_tool()
 def ebx_uia_dump(scope: str = "all", max_depth: int = 8, max_lines: int = 600) -> dict:
     """按窗口分组导出结构化 UIA 树，专门用于看清对话框/弹层挂在哪。
     scope: main（主窗）| dialogs（模态对话框）| popups（下拉弹层/右键菜单）| all。"""
@@ -1110,7 +1169,7 @@ def _pid_alive(pid):
     return False
 
 
-@mcp.tool()
+@ebx_tool()
 def ebx_import_screen_json(json_path: str, screen: str = "", force: bool = False,
                            no_bind: bool = False, no_nav: bool = False,
                            limit: int = 0, no_save: bool = False, wait: int = 0) -> dict:
@@ -1168,7 +1227,7 @@ def ebx_import_screen_json(json_path: str, screen: str = "", force: bool = False
     return info
 
 
-@mcp.tool()
+@ebx_tool()
 def ebx_import_status() -> dict:
     """最近一次 JSON 导入的进度：读 out/import_*.log 尾部，统计 [done]/[bind]/[task] 与结束标志。"""
     st = _state_load()
@@ -1209,7 +1268,57 @@ def ebx_import_status() -> dict:
     }
 
 
-@mcp.tool()
+@ebx_tool()
+def ebx_native_generate(json_path: str, screen: str = "", variable_scope: str = "Project",
+                        screens: list[str] | None = None, omit_text: bool = False,
+                        output_path: str = "") -> dict:
+    """离线把 ebx-screen/1.0 转为原生 Screen View 归档；不连接或写入 EBX。"""
+    try:
+        source_path = os.path.abspath(os.path.join(BASE, json_path))
+        screen_names = set(screens) if screens is not None else None
+        archive, validation = native_prepare_archive(
+            source_path, screen, variable_scope, screen_names, omit_text)
+        if archive is None:
+            return validation
+        source_stem = Path(source_path).stem
+        if source_stem.endswith(".screen"):
+            source_stem = source_stem[:-7]
+        target_path = os.path.abspath(os.path.join(
+            BASE, output_path or os.path.join("out", "ai_socket", source_stem + ".native.json")))
+        os.makedirs(os.path.dirname(target_path), exist_ok=True)
+        native_write_json(target_path, archive)
+        return {
+            "ok": True,
+            "code": "GENERATED",
+            "archive": archive,
+            "archive_path": target_path,
+            "validation": validation,
+        }
+    except (EBXSocketError, OSError, ValueError, TypeError, json.JSONDecodeError) as exc:
+        return {"ok": False, "code": "GENERATE_FAILED", "message": str(exc)}
+
+
+@ebx_tool()
+def ebx_native_import(json_path: str, screen: str = "", variable_scope: str = "Project",
+                      screens: list[str] | None = None, omit_text: bool = False,
+                      dry_run: bool = False, port: int | None = None,
+                      evidence_dir: str = "") -> dict:
+    """安全导入原生画面：实时 Schema、冲突阻断、严格结果检查和双重回读；dry_run 不写入。"""
+    try:
+        source_path = os.path.abspath(os.path.join(BASE, json_path))
+        screen_names = set(screens) if screens is not None else None
+        archive, validation = native_prepare_archive(
+            source_path, screen, variable_scope, screen_names, omit_text)
+        if archive is None:
+            return validation
+        target_dir = os.path.abspath(os.path.join(
+            BASE, evidence_dir or os.path.join("out", "ai_socket", "native_import_%d" % time.time_ns())))
+        return native_import_archive(EBXSocket(port), archive, target_dir, dry_run)
+    except (EBXSocketError, OSError, ValueError, TypeError, json.JSONDecodeError) as exc:
+        return {"ok": False, "code": "IMPORT_ERROR", "message": str(exc)}
+
+
+@ebx_tool()
 def ebx_native_patch_capture(screen: str) -> dict:
     """通过已启用的原生预览 Socket 捕获单一画面快照与 canonical base_hash；不写 EBX。"""
     if not isinstance(screen, str) or not screen.strip():
@@ -1220,7 +1329,7 @@ def ebx_native_patch_capture(screen: str) -> dict:
         return {"ok": False, "code": getattr(exc, "code", "ERROR"), "message": str(exc)}
 
 
-@mcp.tool()
+@ebx_tool()
 def ebx_native_patch_apply(patch: dict, dry_run: bool = False) -> dict:
     """应用 ebx-native-patch/1.0：基线冲突检查、Schema 预检、回读验证与失败回滚；不自动启用预览。"""
     if not isinstance(patch, dict):
@@ -1231,7 +1340,7 @@ def ebx_native_patch_apply(patch: dict, dry_run: bool = False) -> dict:
         return {"ok": False, "code": getattr(exc, "code", "ERROR"), "message": str(exc)}
 
 
-@mcp.tool()
+@ebx_tool()
 def ebx_native_clone_screen(source_screen: str, new_names: list[str], dry_run: bool = False,
                            snapshot: bool = False) -> dict:
     """从既有原生画面克隆一个或多个画面，检查冲突并逐画面 canonical 回读；不自动启用预览。"""
@@ -1246,7 +1355,7 @@ def ebx_native_clone_screen(source_screen: str, new_names: list[str], dry_run: b
         return {"ok": False, "code": getattr(exc, "code", "ERROR"), "message": str(exc)}
 
 
-@mcp.tool()
+@ebx_tool()
 def ebx_native_query_objects(screen: str = "", screens: list[str] | None = None,
                              all_screens: bool = False) -> dict:
     """轻量查询对象名称、类型和 x/y；screen、screens、all_screens 必须且只能指定一个。"""
@@ -1256,7 +1365,7 @@ def ebx_native_query_objects(screen: str = "", screens: list[str] | None = None,
         return {"ok": False, "code": getattr(exc, "code", "ERROR"), "message": str(exc)}
 
 
-@mcp.tool()
+@ebx_tool()
 def ebx_native_snapshot(screen: str) -> dict:
     """请求原生预览生成指定画面 PNG，并复制到证据目录、记录 SHA-256；不自动启用预览。"""
     if not isinstance(screen, str) or not screen.strip():
@@ -1267,7 +1376,7 @@ def ebx_native_snapshot(screen: str) -> dict:
         return {"ok": False, "code": getattr(exc, "code", "ERROR"), "message": str(exc)}
 
 
-@mcp.tool()
+@ebx_tool()
 def ebx_click_name(pattern: str) -> dict:
     """点击 Name 匹配正则的第一个可见控件（优先 Invoke，失败退坐标点击）。用于面板、对话框、欢迎页。"""
     _ensure_uia_thread()
@@ -1283,7 +1392,7 @@ def ebx_click_name(pattern: str) -> dict:
             "element": _desc(el), "pattern": pattern}
 
 
-@mcp.tool()
+@ebx_tool()
 def ebx_click_xy(x: int, y: int, relative: bool = True) -> dict:
     """鼠标点击。relative=True 时 x,y 为窗口内坐标（截图坐标）；False 为屏幕坐标。"""
     _ensure_uia_thread()
@@ -1298,7 +1407,7 @@ def ebx_click_xy(x: int, y: int, relative: bool = True) -> dict:
     return {"ok": True, "clicked": [x, y], "relative": False}
 
 
-@mcp.tool()
+@ebx_tool()
 def ebx_ribbon(tab: str, item: str = "") -> dict:
     """坐标点击 Ribbon 页签 / 页签内按钮，或文件后台项。
     例：ebx_ribbon("工程文件", "编译")、ebx_ribbon("元件", "数值")、ebx_ribbon("文件后台", "另存为")。
@@ -1343,7 +1452,7 @@ def ebx_ribbon(tab: str, item: str = "") -> dict:
     return {"ok": True, "clicked": [tab], "coords": t}
 
 
-@mcp.tool()
+@ebx_tool()
 def ebx_screenshot(path: str = "") -> dict:
     """截取 EBX 主窗口（仅窗口区域），返回保存路径与窗口矩形供坐标换算。"""
     _ensure_uia_thread()
@@ -1363,7 +1472,7 @@ def ebx_screenshot(path: str = "") -> dict:
             "note": "截图坐标即窗口内坐标；屏幕坐标 = 截图坐标 + rect 左上角"}
 
 
-@mcp.tool()
+@ebx_tool()
 def ebx_keys(combo: str) -> dict:
     """向 EBX 发送真实按键（SendInput），如 "ctrl+s"、"enter"、"esc"、"ctrl+shift+s"。"""
     _ensure_uia_thread()
@@ -1376,7 +1485,7 @@ def ebx_keys(combo: str) -> dict:
     return {"ok": True, "sent": combo}
 
 
-@mcp.tool()
+@ebx_tool()
 def ebx_save_as(path: str) -> dict:
     """另存为 .ebxprj：走文件后台与原生 #32770 对话框，ValuePattern 写全路径后点保存，并校验产物。"""
     _ensure_uia_thread()
@@ -1438,7 +1547,7 @@ def ebx_save_as(path: str) -> dict:
             "dialog_buttons": _dialog_buttons(confirm) if confirm is not None else None}
 
 
-@mcp.tool()
+@ebx_tool()
 def ebx_open(path: str, discard_unsaved: bool = False) -> dict:
     """打开 .ebxprj/.ebxobj：文件后台 » 打开 » 原生对话框写路径并确认。
     当前工程有未保存修改时会弹「是否要保存该工程文件?」——默认**不替用户决定**并返回 ok:false；
@@ -1520,7 +1629,7 @@ def ebx_open(path: str, discard_unsaved: bool = False) -> dict:
     return {"ok": ok, "path": path, "fill": how, "button": clicked, "title": _title()}
 
 
-@mcp.tool()
+@ebx_tool()
 def ebx_new_project(wait_seconds: int = 15) -> dict:
     """新建工程。欢迎页直接点"创建"（默认机型卡）；已有工程时走 文件 » 新建（可能弹未保存确认）。"""
     _ensure_uia_thread()
@@ -1551,7 +1660,7 @@ def ebx_new_project(wait_seconds: int = 15) -> dict:
     return {"ok": False, "error": "新建超时", "title": _title()}
 
 
-@mcp.tool()
+@ebx_tool()
 def ebx_compile(project_dir: str = "", timeout: int = 120) -> dict:
     """编译工程：识别“编译中”进度窗，按 .ebxobj 更新与稳定判定结果。"""
     _ensure_uia_thread()
@@ -1634,7 +1743,7 @@ def ebx_compile(project_dir: str = "", timeout: int = 120) -> dict:
             "hint": "请检查编译进度窗与记录面板"}
 
 
-@mcp.tool()
+@ebx_tool()
 def ebx_offline_simulate(timeout: int = 45) -> dict:
     """离线模拟：工程文件 » 离线模拟，等待 cMTRemote 启动并回报进程/窗口/监听端口。
     首次可能弹 Windows 防火墙授权——不会代为放行。"""
@@ -1684,7 +1793,7 @@ def ebx_offline_simulate(timeout: int = 45) -> dict:
     return {"ok": False, "error": "模拟启动超时", "processes": _related_processes()}
 
 
-@mcp.tool()
+@ebx_tool()
 def ebx_stop_simulation() -> dict:
     """结束离线模拟：优先 taskkill cMTRemote，随后检查 com-x/dserver-x 残留。"""
     subprocess.run(["taskkill", "/F", "/IM", "cMTRemote.exe"], capture_output=True)
@@ -1694,7 +1803,7 @@ def ebx_stop_simulation() -> dict:
     return {"ok": not leftovers, "leftovers": leftovers}
 
 
-@mcp.tool()
+@ebx_tool()
 def ebx_artifacts(project_dir: str = "") -> dict:
     """列出工程目录里的 .ebxprj/.ebxobj（大小/时间），用于编译与保存结果核验。"""
     st = _state_load()
@@ -1713,6 +1822,9 @@ def ebx_artifacts(project_dir: str = "") -> dict:
     except OSError as e:
         return {"ok": False, "error": repr(e), "dir": pdir}
     return {"ok": True, "dir": pdir, "items": items}
+
+
+mcp.add_transform(EBXCatalogTransform())
 
 
 def main():

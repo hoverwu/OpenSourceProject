@@ -3,7 +3,9 @@
 import copy
 import json
 from pathlib import Path
+import tempfile
 import unittest
+from unittest.mock import patch
 
 import ebx_native_codegen as codegen
 
@@ -78,6 +80,16 @@ class NativeCodegenTests(unittest.TestCase):
         for obj in screen["objects"]:
             self.assertNotIn("text", obj["properties"])
 
+    def test_cli_default_output_stays_under_out(self):
+        argv = ["ebx_native_codegen.py", str(FIXTURE), "--screens", "参数设定", "--omit-text"]
+        with patch.object(codegen.sys, "argv", argv), \
+                patch.object(codegen, "write_json") as write, \
+                patch.object(codegen.os, "makedirs"):
+            self.assertEqual(codegen.main(), 0)
+        self.assertEqual(
+            Path(write.call_args.args[0]).as_posix(),
+            "out/ai_socket/C2_Native_Sample.native.json")
+
     def test_import_success_requires_all_operations_and_bindings(self):
         complete = {
             "success": True,
@@ -123,6 +135,101 @@ class NativeCodegenTests(unittest.TestCase):
         self.assertFalse(result["ok"])
         self.assertTrue(any("x 不一致" in error for error in result["errors"]))
         self.assertTrue(any("事件 task 不一致" in error for error in result["errors"]))
+
+
+class NativeImportTests(unittest.TestCase):
+    def setUp(self):
+        with FIXTURE.open(encoding="utf-8") as f:
+            self.data = json.load(f)
+        self.archive = codegen.convert(self.data, "安全导入", screens={"参数设定"}, omit_text=True)
+        self.schema = {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "$id": "test.screen.schema.json",
+            "schema_version": "1.4",
+            "type": "object",
+            "required": ["header", "body"],
+            "properties": {
+                "header": {"type": "object", "required": ["schemaVersion", "contentType"]},
+                "body": {"type": "object", "required": ["screens", "windows"]},
+            },
+        }
+
+    def fake_client(self, conflicts=None, imported=None, full_screen=None, export_screen=None):
+        calls = []
+
+        case = self
+
+        class FakeClient:
+            def call(self, method, params):
+                calls.append((method, copy.deepcopy(params)))
+                if method == "getScreenViewJsonSchema":
+                    result = copy.deepcopy(case.schema)
+                elif method == "detectImportConflicts":
+                    result = conflicts or {"has_conflicts": False, "conflict_count": 0, "conflicts": []}
+                elif method == "importScreenView":
+                    result = imported or {
+                        "success": True,
+                        "changeset_result": {"all_ok": True, "per_operation": [{"success": True}]},
+                    }
+                elif method == "getViewByScreenName":
+                    result = {"screen": copy.deepcopy(full_screen or case.archive["body"]["screens"][0])}
+                elif method == "exportScreenView":
+                    exported = copy.deepcopy(case.archive)
+                    if export_screen is not None:
+                        exported["body"]["screens"][0] = copy.deepcopy(export_screen)
+                    result = {"archive": exported}
+                elif method == "getDiagnostics":
+                    result = {"running": True}
+                else:
+                    raise AssertionError(method)
+                return {"ok": True, "result": result, "schema_version": "1.4"}
+
+        return FakeClient(), calls
+
+    def test_conflict_aborts_before_import(self):
+        client, calls = self.fake_client(conflicts={
+            "has_conflicts": True, "conflict_count": 1, "conflicts": ["安全导入"]})
+        result = codegen.import_archive(client, self.archive)
+        self.assertFalse(result["ok"])
+        self.assertEqual(result["code"], "IMPORT_CONFLICT")
+        self.assertNotIn("importScreenView", [method for method, _ in calls])
+
+    def test_dry_run_validates_schema_and_conflicts_without_import(self):
+        client, calls = self.fake_client()
+        result = codegen.import_archive(client, self.archive, dry_run=True)
+        self.assertTrue(result["ok"])
+        self.assertEqual(result["code"], "DRY_RUN_OK")
+        self.assertTrue(result["schema"]["ok"])
+        self.assertEqual(result["schema"]["schema_version"], "1.4")
+        self.assertNotIn("importScreenView", [method for method, _ in calls])
+
+    def test_schema_failure_blocks_import(self):
+        archive = copy.deepcopy(self.archive)
+        archive["header"]["schemaVersion"] = "9.9"
+        self.schema["properties"]["header"]["properties"] = {
+            "schemaVersion": {"const": "1.1"}, "contentType": {"const": "view"}}
+        client, calls = self.fake_client()
+        result = codegen.import_archive(client, archive)
+        self.assertEqual(result["code"], "NATIVE_SCHEMA_VALIDATION_FAILED")
+        self.assertNotIn("detectImportConflicts", [method for method, _ in calls])
+
+        self.schema = []
+        client, calls = self.fake_client()
+        result = codegen.import_archive(client, archive)
+        self.assertEqual(result["code"], "INVALID_NATIVE_SCHEMA")
+        self.assertNotIn("detectImportConflicts", [method for method, _ in calls])
+
+    def test_readback_mismatch_is_failure_and_writes_evidence(self):
+        changed = copy.deepcopy(self.archive["body"]["screens"][0])
+        changed["objects"][0]["properties"]["x"] += 1
+        client, _ = self.fake_client(full_screen=changed, export_screen=changed)
+        with tempfile.TemporaryDirectory(dir=BASE / "out") as temp:
+            result = codegen.import_archive(client, self.archive, temp)
+            self.assertFalse(result["ok"])
+            self.assertEqual(result["code"], "READBACK_MISMATCH")
+            self.assertFalse(result["verification_full"]["ok"])
+            self.assertTrue((Path(temp) / "native_codegen_evidence.json").is_file())
+            self.assertTrue((Path(temp) / "native_codegen_archive.json").is_file())
 
 
 if __name__ == "__main__":

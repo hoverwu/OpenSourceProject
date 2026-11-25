@@ -1,6 +1,6 @@
 @echo off
 rem EasyBuilder X dedicated MCP server (normal privilege, Medium IL)
-rem author: hoverwu  version: 0.5.0  (29 tools)
+rem author: hoverwu  version: 0.6.0  (31 registered tools, 4 bootstrap entries)
 rem
 rem Interpreter order: PYTHON env var > .venv\Scripts\python.exe > venv\Scripts\python.exe > python on PATH
 rem Install deps with:  python -m pip install -r requirements.txt
