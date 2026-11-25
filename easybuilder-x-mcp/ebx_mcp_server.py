@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 """
 ebx_mcp_server.py - EasyBuilder X 专用 MCP 服务器（UIA + 坐标地图）
-author: hoverwu  version: 0.3.0  date: 2026-11-24
+author: hoverwu  version: 0.4.0  date: 2026-11-25
 
 定位：不是通用 uiautomation-mcp 的换皮，而是把 EBX 实测出来的
       「Ribbon 坐标地图 + 面板 UIA 语义 + 原生对话框 AutomationId」
@@ -63,6 +63,8 @@ import ctypes.wintypes as wt
 import subprocess
 
 from tools.ebx_layout import RIBON
+from tools.ebx_ai_socket import EBXSocket, EBXSocketError
+from tools.ebx_native_patch import PatchError, capture as native_patch_capture, apply_patch as native_patch_apply
 
 
 try:
@@ -1200,6 +1202,28 @@ def ebx_import_status() -> dict:
         "errors": errors,
         "tail": lines[-12:],
     }
+
+
+@mcp.tool()
+def ebx_native_patch_capture(screen: str) -> dict:
+    """通过已启用的原生预览 Socket 捕获单一画面快照与 canonical base_hash；不写 EBX。"""
+    if not isinstance(screen, str) or not screen.strip():
+        return {"ok": False, "code": "INVALID_SCREEN", "message": "screen 不能为空"}
+    try:
+        return native_patch_capture(EBXSocket(), screen, os.path.join(OUT, "ai_socket"))
+    except (PatchError, EBXSocketError, OSError, ValueError) as exc:
+        return {"ok": False, "code": getattr(exc, "code", "ERROR"), "message": str(exc)}
+
+
+@mcp.tool()
+def ebx_native_patch_apply(patch: dict, dry_run: bool = False) -> dict:
+    """应用 ebx-native-patch/1.0：基线冲突检查、Schema 预检、回读验证与失败回滚；不自动启用预览。"""
+    if not isinstance(patch, dict):
+        return {"ok": False, "code": "INVALID_PATCH", "message": "patch 必须是对象"}
+    try:
+        return native_patch_apply(EBXSocket(), patch, dry_run, os.path.join(OUT, "ai_socket"))
+    except (PatchError, EBXSocketError, OSError, ValueError) as exc:
+        return {"ok": False, "code": getattr(exc, "code", "ERROR"), "message": str(exc)}
 
 
 @mcp.tool()

@@ -1,6 +1,6 @@
 # EasyBuilder X V1.01.376s（威纶通）— UIA 操控知识库（给 Agent 读）
 
-作者：hoverwu ｜ 版本：0.2.1 ｜ 建立：2026-11-06 ｜ 更新：2026-11-25 ｜ 适用：EasyBuilder X V1.01.376s（build 2026.10.14，WEINVIEW 版），默认安装位置 `%ProgramFiles%\EasyBuilderX\EasyBuilderX.exe`（可用环境变量 `EBX_EXE` 覆盖）
+作者：hoverwu ｜ 版本：0.3.0 ｜ 建立：2026-11-06 ｜ 更新：2026-11-25 ｜ 适用：EasyBuilder X V1.01.376s（build 2026.10.14，WEINVIEW 版），默认安装位置 `%ProgramFiles%\EasyBuilderX\EasyBuilderX.exe`（可用环境变量 `EBX_EXE` 覆盖）
 
 本文只写"怎么读、怎么点、哪里会失败"。所有坐标、AutomationId、尺寸均为本机实测；未实测的推断单独标注"未验证"，不得当结论用。
 
@@ -44,7 +44,7 @@
 
 ```
 <项目根>\
-  ebx_mcp_server.py        # 24 个 EBX 专用工具，FastMCP HTTP（v0.2.0）
+  ebx_mcp_server.py        # 26 个 EBX 专用工具，FastMCP HTTP（v0.4.0）
   start-ebx-mcp.bat        # 普通权限启动（无需 UAC），监听 127.0.0.1:8788
   ebx-mcp-smoke-test.py    # 自检：工具清单 + status + screen_list + uia_dump…
   SKILL.md                 # Skill 源稿（与 MCP 同目录）
@@ -69,7 +69,7 @@ python ebx-mcp-smoke-test.py 8788
 
 MCP 注册（需用户点头且**新开会话**才生效）：`{ "url": "http://127.0.0.1:8788/mcp" }`
 
-**24 个工具**（v0.2.0 新增标记 ★）：
+**26 个工具**（v0.2.0 页面工具与 v0.4.0 补丁工具均已固化）：
 
 | 工具 | 作用 |
 | --- | --- |
@@ -93,6 +93,8 @@ MCP 注册（需用户点头且**新开会话**才生效）：`{ "url": "http://
 | ★ `ebx_uia_dump` | 按 main/dialogs/popups/all 导出结构化 UIA 树 |
 | ★ `ebx_import_screen_json` | 后台跑导入器，日志 `out/import_*.log`（支持 limit/no_save 等） |
 | ★ `ebx_import_status` | 读导入日志：done/total/binds_ok/tasks_ok/finished/errors/tail |
+| `ebx_native_patch_capture` | 原生预览：捕获单一画面快照与 canonical base_hash，不写 EBX |
+| `ebx_native_patch_apply` | 原生预览：应用 `ebx-native-patch/1.0`，支持 dry-run、冲突检查、回读与尽力回滚 |
 | `ebx_compile` | 工程文件 » 编译；按产物稳定性 + 弹窗判定 |
 | `ebx_offline_simulate` | 工程文件 » 离线模拟；回报进程/窗口/端口 |
 | `ebx_stop_simulation` | `taskkill cMTRemote` 并查残留 |
@@ -568,6 +570,46 @@ python -m unittest discover -s tools -p "test_validate_screen_json.py"
 
 `tools/` 内还有桌面调试脚本，不能使用宽泛 `test_*.py` 自动发现。
 
+### 10.8 原生增量补丁与官方批量能力（2026-11-25 实测）
+
+**优先路线**：现有画面用 `exportScreenView` 捕获快照 → AI 生成 `ebx-native-patch/1.0` → 基线/Schema/`before` 预检 → `applyChangeset` → 导出回读 → 失败时尽力回滚。避免整页重建，也避免 `importScreenView` 对同名画面自动创建副本。
+
+**工具入口**：
+
+- CLI：`tools/ebx_native_patch.py capture|apply`；`--dry-run` 只生成原生操作计划，不写 EBX。
+- MCP v0.4.0：`ebx_native_patch_capture(screen)` 与 `ebx_native_patch_apply(patch, dry_run=False)`，证据固定写 `out/ai_socket/`。
+- 样例与完整步骤：`examples/NATIVE_PATCH_RUNBOOK.md`、`examples/Native_Patch_Sample.json`。
+
+**已开放字段与编码**：
+
+| 补丁字段 | 原生编码 | 约束 |
+| --- | --- | --- |
+| `x/y/width/height/radius` | JSON 字符串，如 `"40"` | 宽高为正整数；radius 为非负整数 |
+| `padding` | `{"top":1,"right":2,"bottom":3,"left":4}` | 四键齐全，成员必须是非负 JSON 整数 |
+| `text` | `String://Project:ID[n]` 或 `null` | 不接受普通内联文字 |
+| `value/readValue` | `{"path":"Variable://Project/<tag>"}` | Numeric 可写用 value，只读用 readValue；Lamp 用 readValue |
+| `add_entity.tag` | 自动补 `Variable://Project/<tag>` | 仅 Numeric/Lamp；Numeric 创建为可写值 |
+| `set_event` | `{entity,event,statements}` | 当前验证 Button `task` 切屏 |
+
+`add_entity` 只传 `screen_or_window/object_description/name`，几何、文字、变量和事件必须展开成后续 `set_property/set_event`。`remove_entity` 必须单独一个补丁执行，且无法自动恢复被删对象，因此工具会保留写前快照并明确报告。
+
+**并发与失败语义**：
+
+- `base_hash` 是排序、紧凑 JSON 的 SHA-256；基线变化且补丁尚未满足时返回 `BASE_HASH_CONFLICT`。
+- 目标已等于期望值时返回 `noop`，不重复创建或重复写入。
+- Changeset 批次不是原子事务；工具严格检查每个操作与未解析引用，并在验证失败时按逆序尽力回滚。回滚失败必须保留证据并人工处理。
+- 同一元件的多个属性/事件回滚键分别包含 property/event，避免互相覆盖。
+
+**实测性能与清理**：一次新增 Text/Numeric/Button，含几何、字符串引用、Project 变量和 Button 切屏事件，共 19 个原生操作约 **0.154 s**；重复执行返回 `noop`。三个临时对象分别约 0.068/0.059/0.035 s 删除，删除后画面哈希回到新增前。原 Numeric 的 x/y/width/height/radius/padding 六项恢复约 0.0497 s，回读全部满足；工程已保存。证据位于 `out/ai_socket/native_patch_20261125_074715_25500_evidence.json` 等运行目录，不入发布包。
+
+**官方批量能力（W5 文档核验，非本机新增实测）**：
+
+- `工程文件 > 字符串` 支持 CSV/XLS/XLSX 导入导出；ID 唯一，但精确表头、编码、重复导入行为未记载，迁移前先做小样本 round-trip。
+- `工程文件 > 设备列表` 的“导入标签/从设备导入标签”受驱动条件限制；V1.01.376 更新说明仅证实部分 Beckhoff/Schneider 标签档案错误处理，不是通用变量 CSV 承诺。
+- 智慧批次可多选元件套用共用属性/事件/方法；直接批量改地址、异构事件/方法未证实。
+- 自定义模板已证实工程内建立、拖拽部署与“应用更改”同步；未找到独立文件导出或跨工程部署格式。
+- 官方 `ebxtool.exe` 文档只有 `--version` 与 `audit verify`，不是制图 CLI。Screen View/Changeset 仍属本机技术预览。
+
 ## 12. 更新记录
 
 | 日期 | 版本 | 内容 |
@@ -580,5 +622,6 @@ python -m unittest discover -s tools -p "test_validate_screen_json.py"
 | 2026-11-07 | 0.1.5 | MCP 升到 v0.2.0（24 工具）：新增 §10.6 UIA 树模型与 `screen_list/screen_open/screen_elements/uia_dump/import_screen_json/import_status`；修 `_prop_value` 深度 16→30；§6 改坑 4 为对话框三宿主，追加坑 16–18（属性面板深度、元件 dock 无 TabControl、文档页签自绘）；补 NO_PROXY `[::1]` 与双进程说明 |
 | 2026-11-24 | 0.2.0 | 新增 §10.7 原生 Screen View / AI Socket 技术预览：门控、协议、导入/Changeset、8 控件导入、编译与离线导航验收；修复“编译中”误判与 `ebx_open` 模态框激活/“否”按钮匹配；明确内联文字、未解析变量与地址批量修改边界；新增 12 个原生工具离线测试 |
 | 2026-11-25 | 0.2.1 | 补实测 `displayString` 四种形式、字符串库 CSV 前提、Changeset `set_property` envelope 与规范实体路径；验证真实 Project 变量绑定；记录设备 URI 原样回导失败与 `all_ok` 语义边界；转换器新增未解析引用失败判定与回归测试 |
+| 2026-11-25 | 0.3.0 | 新增 §10.8 原生增量补丁：capture/dry-run/apply、基线冲突、幂等、严格回读与尽力回滚；MCP v0.4.0 增加两个补丁工具（26 工具）；实测三类控件+变量+事件 19 操作约 0.154 s、删除与几何恢复；补 W5 官方字符串/标签/智慧批次/模板/CLI 边界；42 项离线测试通过 |
 
 > 之后每次在本会话获得新知识，追加一行并把改动写进对应小节；同时同步 `EBX-MCP-CONTROL-PLAN.md`、`RESEARCH-LEDGER.md` 与 Skill。

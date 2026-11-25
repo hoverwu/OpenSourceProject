@@ -1,0 +1,67 @@
+{
+  "schema": "ebx-native-patch/1.0",
+  "generator": {
+    "tool": "ebx_native_patch",
+    "version": "0.1.0",
+    "author": "hoverwu"
+  },
+  "screen": "监控",
+  "base_hash": "0000000000000000000000000000000000000000000000000000000000000000",
+  "operations": [
+    {
+      "type": "set_property",
+      "entity": "标题",
+      "property": "x",
+      "before": 20,
+      "value": 40
+    },
+    {
+      "type": "set_property",
+      "entity": "当前温度",
+      "property": "value",
+      "before": "Variable://Project/rOldTemp",
+      "value": "Variable://Project/rTempMeas"
+    },
+    {
+      "type": "add_entity",
+      "name": "温度设定",
+      "object_type": "Numeric",
+      "properties": {
+        "x": 40,
+        "y": 120,
+        "width": 180,
+        "height": 60,
+        "tag": "rTempSetpoint"
+      }
+    },
+    {
+      "type": "add_entity",
+      "name": "导航_参数设定",
+      "object_type": "Button",
+      "properties": {
+        "x": 700,
+        "y": 520,
+        "width": 140,
+        "height": 40,
+        "text": "String://Project:ID[31]"
+      },
+      "events": [
+        {
+          "id": "onClick",
+          "statements": [
+            {
+              "type": "call",
+              "method": "Method://<system>.changeScreen",
+              "parameters": {
+                "target": "Object://Screen:参数设定",
+                "animation": {
+                  "effect": "none"
+                }
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

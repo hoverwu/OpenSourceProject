@@ -1,6 +1,6 @@
 # EasyBuilder X（威纶通）MCP 控制方案
 
-作者：hoverwu ｜ 版本：1.6.0 ｜ 建立：2026-11-06 ｜ 更新：2026-11-25 ｜ 依据：`RESEARCH-LEDGER.md` 与 `EASYBUILDERX-UIA-AGENT-GUIDE.md`（v0.2.1）
+作者：hoverwu ｜ 版本：1.7.0 ｜ 建立：2026-11-06 ｜ 更新：2026-11-25 ｜ 依据：`RESEARCH-LEDGER.md` 与 `EASYBUILDERX-UIA-AGENT-GUIDE.md`（v0.3.0）
 
 > 本文所有"已验证"条目均于 2026-11-06/07/24/25 在 EasyBuilder X V1.01.376s 上跑通；默认安装路径以 `%ProgramFiles%\EasyBuilderX` 表示。
 
@@ -8,7 +8,7 @@
 
 EasyBuilder X **没有公开承诺的稳定编程接口**（无 COM/SDK/插件/工程 CLI；`ebxtool.exe` 仅审计 CSV 校验）。实测后，可行通路收敛为三条：
 
-1. **L1 UIA 驱动（通用主力，已验证到端到端）**：普通权限 `uiautomation` + 专用 HTTP MCP 服务 `http://127.0.0.1:8788/mcp`（24 工具）；另有通用备用服务 8786（9 工具）。
+1. **L1 UIA 驱动（通用主力，已验证到端到端）**：普通权限 `uiautomation` + 专用 HTTP MCP 服务 `http://127.0.0.1:8788/mcp`（26 工具）；另有通用备用服务 8786（9 工具）。
 2. **L1.5 本机 Screen View 预览（快速结构化路线）**：显式授权启用两个预览标记后，loopback Socket 支持画面 JSON 导入/导出与 Changeset；非公开稳定 API，仅本机版本已实测。
 3. **L4 运行时验证（已验证到进程/端口/诊断器）**：离线模拟拉起 cMTRemote + com-x(8000) + dserver-x(24763) + 诊断器对象树。
 
@@ -19,11 +19,11 @@ EasyBuilder X **没有公开承诺的稳定编程接口**（无 COM/SDK/插件/�
 
 ## 2. MCP 落地形态（专用版已部署并自检通过）
 
-主力：**EBX 专用 FastMCP 服务器**（24 个领域工具，`127.0.0.1:8788`，普通权限，v0.2.0）。
+主力：**EBX 专用 FastMCP 服务器**（26 个领域工具，`127.0.0.1:8788`，普通权限，v0.4.0）。
 
 ```
 <项目根>\
-  ebx_mcp_server.py        # 专用 MCP：24 个 ebx_* 工具（主力）
+  ebx_mcp_server.py        # 专用 MCP：26 个 ebx_* 工具（主力）
   start-ebx-mcp.bat        # 一键启动 8788（无需 UAC）
   ebx-mcp-smoke-test.py    # 自检：工具清单 + status + screen_list + uia_dump…
   SKILL.md                 # Skill 源稿（与 MCP 同目录，便于整体打包）
@@ -40,12 +40,12 @@ EasyBuilder X **没有公开承诺的稳定编程接口**（无 COM/SDK/插件/�
   work\                    # 样例工程 Project.ebxprj / Project.ebxobj
 ```
 
-专用工具（实测可用）：`ebx_status / ebx_launch / ebx_windows / ebx_tree / ebx_find / ebx_click_name / ebx_click_xy / ebx_ribbon / ebx_ribbon_map / ebx_screenshot / ebx_keys / ebx_save_as / ebx_open / ebx_new_project / ebx_compile / ebx_offline_simulate / ebx_stop_simulation / ebx_artifacts / ebx_screen_list / ebx_screen_open / ebx_screen_elements / ebx_uia_dump / ebx_import_screen_json / ebx_import_status`。
+专用工具（实测可用）：`ebx_status / ebx_launch / ebx_windows / ebx_tree / ebx_find / ebx_click_name / ebx_click_xy / ebx_ribbon / ebx_ribbon_map / ebx_screenshot / ebx_keys / ebx_save_as / ebx_open / ebx_new_project / ebx_compile / ebx_offline_simulate / ebx_stop_simulation / ebx_artifacts / ebx_screen_list / ebx_screen_open / ebx_screen_elements / ebx_uia_dump / ebx_import_screen_json / ebx_import_status / ebx_native_patch_capture / ebx_native_patch_apply`。
 
 MCP 注册：`{ "url": "http://127.0.0.1:8788/mcp" }`（需用户同意 + 新开会话）。EBX 全系 asInvoker（Medium IL），**不需要提权壳**。
 备用通用版：`{ "url": "http://127.0.0.1:8786/mcp" }`，9 工具，适合临时探查。
 
-自检实测：24 工具列出（v0.2.0；初版 18）；`ebx_status` 命中主窗；`ebx_find` 正常返回属性面板元素；`ebx_save_as / ebx_open / ebx_compile / ebx_offline_simulate / ebx_stop_simulation / ebx_screen_list / ebx_screen_open / ebx_import_screen_json` 全部端到端通过。
+自检实测：24 个旧版 UIA/页面工具通过（v0.2.0；初版 18）；v0.4.0 增加 capture/apply 两个原生补丁工具后共 26 个。`ebx_status` 命中主窗；`ebx_find` 正常返回属性面板元素；`ebx_save_as / ebx_open / ebx_compile / ebx_offline_simulate / ebx_stop_simulation / ebx_screen_list / ebx_screen_open / ebx_import_screen_json` 全部端到端通过。补丁核心 CLI 已完成真实工程新增、绑定、事件、回读、幂等、删除与恢复验收；MCP 薄封装有 4 项离线测试。
 
 ## 3. 控件地图（2026-11-06 实测）
 
@@ -169,7 +169,7 @@ rem 1) 启动专用 MCP 服务（普通权限）
 cd /d "<项目根>"
 start-ebx-mcp.bat
 
-rem 2) 自检（24 工具；若 NO_PROXY 含 [::1]，先清空）
+rem 2) 自检（26 工具；若 NO_PROXY 含 [::1]，先清空）
 set NO_PROXY=
 set no_proxy=
 python ebx-mcp-smoke-test.py 8788
@@ -228,7 +228,27 @@ python tools\ebx_act.py shot out\shot.png
 - **模板/复用**：原生支持 custom/composite model 的 Changeset 与导入导出方法，但跨工程模板复用保真度尚未验收。
 - **JS**：Resource 文件可导入；未找到运行时/设计时执行入口，不能实现当前 AI 动态绘图目标。
 - **证据**：`out/ai_socket/nobind_import/`、`out/ai_socket/offline_sim_c2.png`、`out/ai_socket/offline_sim_params_from_c2.png`、`out/ai_socket/project_variable_binding.json`、`out/ai_socket/device_exact_roundtrip.json`。
-- **测试**：`python -m unittest discover -s tools -p "test_ebx_*.py"` 与验证器测试共 20 项通过；覆盖预览协议、转换、未解析引用判定、验证器空地址与 MCP 模态框处理。
+- **测试**：`python -m unittest discover -s tools -p "test_ebx_*.py"` 与验证器测试；当前完整离线回归共 42 项通过，覆盖预览协议、转换、未解析引用判定、增量补丁、补丁 MCP 封装、验证器与 MCP 模态框处理。
+
+## 12.1 既有画面增量补丁（2026-11-25 实测）
+
+**目的**：不重建整页，只修改既有控件或增加少量控件。`importScreenView` 对同名画面会创建副本，因此增量路线必须走 Changeset。
+
+- **格式与工具**：`tools/ebx_native_patch.py`，schema `ebx-native-patch/1.0`；MCP v0.4.0 新增 `ebx_native_patch_capture(screen)` 与 `ebx_native_patch_apply(patch, dry_run=false)`，共 26 工具。
+- **流程**：capture 画面快照与 canonical SHA-256 → 填写 operations / before → dry-run → apply → 导出回读 → 编译与模拟验收。
+- **能力**：root 层 Text/Numeric/Lamp/Button；`set_property`、`set_event`、`add_entity` 与单独的 `remove_entity`。整数几何在补丁中用 JSON 整数，工具转换成原生要求的字符串；变量引用转换成 `{path}`；padding 使用四边整数对象。
+- **并发与冲突**：基线哈希或 before 不匹配即停止；目标状态已满足时 no-op；新增对象同名但内容不同时报冲突，不覆盖。
+- **失败语义**：Changeset 非原子，失败时可能已有前序操作生效。工具保存写前快照并尽可能逆序恢复属性/事件或删除本次新增对象；删除无法自动恢复，必须单独执行并以工程备份兜底。
+- **真实验收**：新增 Text/Numeric/Button（字符串引用、Project 变量绑定、切屏事件）展开为 19 个原生操作，约 0.154 s；重复执行 no-op；三个临时对象分别删除后哈希恢复；既有 Numeric 六项几何恢复约 0.0497 s。
+- **样例**：`examples/NATIVE_PATCH_RUNBOOK.md`、`examples/Native_Patch_Sample.json`；18 项补丁测试 + 4 项 MCP 封装测试通过。
+
+### 12.2 官方批量能力边界（2026-11-25 核验）
+
+- 字符串表可导入导出 CSV/XLS/XLSX，适合准备字符串 ID；表头、编码、重复 ID 等细节未记载，迁移前先做小样本 round-trip。
+- 设备标签导入取决于驱动支持，不是通用变量 CSV 承诺。
+- 智慧批次可套用共用属性/事件/方法；直接批量改地址未证实。
+- 自定义模板只证实工程内复用与同步；未找到独立导出或跨工程部署格式。
+- `ebxtool.exe` 公开文档仅提供版本与审计 CSV 校验，不是制图 CLI；EBPro JS SDK 能力不能套用到 EBX。
 
 ## 13. 更新记录
 
@@ -241,3 +261,4 @@ python tools\ebx_act.py shot out\shot.png
 | 2026-11-07 | 1.4.0 | MCP v0.2.0（24 工具）：§11.1 页面级通道 `screen_list/screen_open/screen_elements/uia_dump/import_screen_json/import_status`；修 `_prop_value` 深度；补 UIA 树模型、对话框三宿主、元件 dock 无 TabControl、文档页签自绘、NO_PROXY `[::1]` 与双进程说明 |
 | 2026-11-24 | 1.5.0 | 新增 §12 原生 Screen View / AI Socket 技术预览；修正“编译中”误判与 `ebx_open` 模态框处理；记录 8 控件导入、编译与离线导航验收、文字/变量/地址/JS 边界及 12 项回归测试 |
 | 2026-11-25 | 1.6.0 | 验证真实 Project 变量绑定、字符串 `displayString` 与 `set_property`；记录设备 URI 原样回导失败；导入判定增加未解析引用检查；20 项回归测试通过 |
+| 2026-11-25 | 1.7.0 | 新增 §12.1 `ebx-native-patch/1.0` 增量补丁、capture/dry-run/apply、基线冲突、幂等、非原子回滚与真实性能；MCP 升 v0.4.0（26 工具）；增加 §12.2 官方批量边界；42 项离线测试通过 |
