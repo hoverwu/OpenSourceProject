@@ -6,8 +6,12 @@ import os
 import sys
 import time
 
-from ebx_ai_socket import EBXSocket, EBXSocketError, require_ok
-from validate_screen_json import validate
+if __package__:
+    from .ebx_ai_socket import EBXSocket, EBXSocketError, require_ok
+    from .validate_screen_json import validate
+else:
+    from ebx_ai_socket import EBXSocket, EBXSocketError, require_ok
+    from validate_screen_json import validate
 
 TYPE_MAP = {
     "static_text": "Text",

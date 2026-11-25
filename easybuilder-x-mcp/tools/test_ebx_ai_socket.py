@@ -72,6 +72,64 @@ class EBXSocketTests(unittest.TestCase):
                 "error": {"code": "PROJECT_NOT_READY", "message": "打开工程后重试"},
             })
 
+    def test_resolved_instance_is_reused_for_later_calls(self):
+        class Connection:
+            def __init__(self):
+                self.request = b""
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *args):
+                return False
+
+            def settimeout(self, timeout):
+                pass
+
+            def sendall(self, data):
+                self.request = data
+
+            def recv(self, size):
+                method = json.loads(self.request.decode("utf-8"))["method"]
+                result = "pong" if method == "ping" else {"value": method}
+                return json.dumps({"ok": True, "result": result}).encode("utf-8") + b"\n"
+
+        with patch.object(socket_client, "discover_instances", return_value=[
+            {"host": "127.0.0.1", "port": 19002, "started_at": "2026-11-25T10:00:00"},
+        ]) as discover, patch.object(socket_client.socket, "create_connection", return_value=Connection()) as connect:
+            client = socket_client.EBXSocket(timeout=2)
+            client.call("ping")
+            self.assertEqual(client.call("one")["result"], {"value": "one"})
+            self.assertEqual(client.call("two")["result"], {"value": "two"})
+        discover.assert_called_once_with()
+        self.assertEqual(connect.call_count, 4)
+
+    def test_connection_failure_invalidates_auto_resolved_port(self):
+        class Connection:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *args):
+                return False
+
+            def settimeout(self, timeout):
+                pass
+
+            def sendall(self, data):
+                pass
+
+            def recv(self, size):
+                return b'{"ok":true,"result":"pong"}\n'
+
+        with patch.object(socket_client, "discover_instances", return_value=[
+            {"host": "127.0.0.1", "port": 19003, "started_at": "2026-11-25T10:00:00"},
+        ]), patch.object(socket_client.socket, "create_connection", side_effect=[Connection(), Connection(), OSError("closed")]):
+            client = socket_client.EBXSocket(timeout=2)
+            client.call("ping")
+            with self.assertRaises(socket_client.EBXSocketError):
+                client.call("one")
+        self.assertIsNone(client.port)
+
 
 if __name__ == "__main__":
     unittest.main()

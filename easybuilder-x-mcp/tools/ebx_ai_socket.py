@@ -37,19 +37,22 @@ class EBXSocket:
         self.host = host
         self.port = port
         self.timeout = timeout
+        self._explicit_port = port is not None
 
     def _resolve_port(self):
         if self.port is not None:
             return self.port
         env_port = os.environ.get("EBX_AI_SOCKET_PORT")
         if env_port:
-            return int(env_port)
+            self.port = int(env_port)
+            return self.port
         errors = []
         for item in discover_instances():
             candidate = EBXSocket(item["port"], self.host, min(self.timeout, 2))
             try:
                 if candidate.call("ping").get("result") == "pong":
-                    return item["port"]
+                    self.port = item["port"]
+                    return self.port
             except (OSError, ValueError, EBXSocketError) as exc:
                 errors.append(str(exc))
         detail = "; ".join(errors)
@@ -73,6 +76,8 @@ class EBXSocket:
                         break
                     data.extend(chunk)
         except OSError as exc:
+            if not self._explicit_port:
+                self.port = None
             raise EBXSocketError("连接 %s:%s 失败: %s" % (self.host, port, exc)) from exc
         try:
             response = json.loads(data.decode("utf-8"))

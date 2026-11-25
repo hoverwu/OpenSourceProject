@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 """
 ebx_mcp_server.py - EasyBuilder X 专用 MCP 服务器（UIA + 坐标地图）
-author: hoverwu  version: 0.4.0  date: 2026-11-25
+author: hoverwu  version: 0.5.0  date: 2026-11-25
 
 定位：不是通用 uiautomation-mcp 的换皮，而是把 EBX 实测出来的
       「Ribbon 坐标地图 + 面板 UIA 语义 + 原生对话框 AutomationId」
@@ -65,6 +65,11 @@ import subprocess
 from tools.ebx_layout import RIBON
 from tools.ebx_ai_socket import EBXSocket, EBXSocketError
 from tools.ebx_native_patch import PatchError, capture as native_patch_capture, apply_patch as native_patch_apply
+from tools.ebx_native_reuse import (
+    clone_screens as native_clone_screens,
+    query_objects as native_query_objects,
+    capture_snapshot as native_capture_snapshot,
+)
 
 
 try:
@@ -1227,6 +1232,42 @@ def ebx_native_patch_apply(patch: dict, dry_run: bool = False) -> dict:
 
 
 @mcp.tool()
+def ebx_native_clone_screen(source_screen: str, new_names: list[str], dry_run: bool = False,
+                           snapshot: bool = False) -> dict:
+    """从既有原生画面克隆一个或多个画面，检查冲突并逐画面 canonical 回读；不自动启用预览。"""
+    if not isinstance(source_screen, str) or not source_screen.strip():
+        return {"ok": False, "code": "INVALID_SCREEN", "message": "source_screen 不能为空"}
+    if not isinstance(new_names, list) or not new_names:
+        return {"ok": False, "code": "INVALID_NAMES", "message": "new_names 必须是非空数组"}
+    try:
+        return native_clone_screens(EBXSocket(), source_screen, new_names, dry_run, snapshot,
+                                    os.path.join(OUT, "ai_socket"))
+    except (PatchError, EBXSocketError, OSError, ValueError) as exc:
+        return {"ok": False, "code": getattr(exc, "code", "ERROR"), "message": str(exc)}
+
+
+@mcp.tool()
+def ebx_native_query_objects(screen: str = "", screens: list[str] | None = None,
+                             all_screens: bool = False) -> dict:
+    """轻量查询对象名称、类型和 x/y；screen、screens、all_screens 必须且只能指定一个。"""
+    try:
+        return native_query_objects(EBXSocket(), screen or None, screens, all_screens)
+    except (PatchError, EBXSocketError, OSError, ValueError) as exc:
+        return {"ok": False, "code": getattr(exc, "code", "ERROR"), "message": str(exc)}
+
+
+@mcp.tool()
+def ebx_native_snapshot(screen: str) -> dict:
+    """请求原生预览生成指定画面 PNG，并复制到证据目录、记录 SHA-256；不自动启用预览。"""
+    if not isinstance(screen, str) or not screen.strip():
+        return {"ok": False, "code": "INVALID_SCREEN", "message": "screen 不能为空"}
+    try:
+        return native_capture_snapshot(EBXSocket(), screen, os.path.join(OUT, "ai_socket"))
+    except (PatchError, EBXSocketError, OSError, ValueError) as exc:
+        return {"ok": False, "code": getattr(exc, "code", "ERROR"), "message": str(exc)}
+
+
+@mcp.tool()
 def ebx_click_name(pattern: str) -> dict:
     """点击 Name 匹配正则的第一个可见控件（优先 Invoke，失败退坐标点击）。用于面板、对话框、欢迎页。"""
     _ensure_uia_thread()
@@ -1430,9 +1471,13 @@ def ebx_open(path: str, discard_unsaved: bool = False) -> dict:
         return {"ok": False, "error": "EasyBuilder X 未运行"}
     _send_combo("esc")
     time.sleep(0.2)
-    _click_rel(33, 51)   # 文件
-    time.sleep(0.6)
-    _click_rel(42, 153)  # 打开
+    welcome_page = not _project_name()
+    if welcome_page:
+        _click_rel(54, 27)   # 欢迎页工具栏「打开」
+    else:
+        _click_rel(33, 51)   # 文件
+        time.sleep(0.6)
+        _click_rel(42, 153)  # 打开
     dlg = _wait_file_dialog(5.0)
     if dlg is None:
         return {"ok": False, "error": "打开对话框未出现",

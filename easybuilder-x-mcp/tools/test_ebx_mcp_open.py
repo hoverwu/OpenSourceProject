@@ -27,6 +27,7 @@ class EBXMCPOpenTests(unittest.TestCase):
                 patch.object(server, "_dialog_buttons", return_value=[]), \
                 patch.object(server, "_click_button", return_value="否(N) Alt+N") as discard, \
                 patch.object(server, "_activate", return_value=True) as activate, \
+                patch.object(server, "_project_name", return_value="current.ebxprj"), \
                 patch.object(server, "_send_combo"), \
                 patch.object(server, "_click_rel"), \
                 patch.object(server, "_wait_file_dialog", return_value=None), \
@@ -34,6 +35,19 @@ class EBXMCPOpenTests(unittest.TestCase):
             result = server.ebx_open("test.ebxprj", discard_unsaved=True)
         discard.assert_called_once_with(modal, ("否", "No"))
         activate.assert_called_once_with()
+        self.assertEqual(result["error"], "打开对话框未出现")
+    def test_open_from_welcome_page_uses_toolbar(self):
+        with patch.object(server.os.path, "isfile", return_value=True), \
+                patch.object(server, "_main_window", return_value=object()), \
+                patch.object(server, "_find_visible_dialog", return_value=None), \
+                patch.object(server, "_activate", return_value=True), \
+                patch.object(server, "_project_name", return_value=""), \
+                patch.object(server, "_send_combo"), \
+                patch.object(server, "_click_rel") as click, \
+                patch.object(server, "_wait_file_dialog", return_value=None), \
+                patch.object(server.time, "sleep"):
+            result = server.ebx_open("test.ebxprj")
+        click.assert_called_once_with(54, 27)
         self.assertEqual(result["error"], "打开对话框未出现")
 
 

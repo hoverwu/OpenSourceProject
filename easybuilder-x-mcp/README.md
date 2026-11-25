@@ -1,6 +1,6 @@
 # EasyBuilder X MCP + Skill
 
-作者 hoverwu · 版本 0.6.0（MCP 服务器 0.4.0，26 个工具）· 实测版本 EasyBuilder X V1.01.376s
+作者 hoverwu · 版本 0.7.0（MCP 服务器 0.5.0，29 个工具）· 实测版本 EasyBuilder X V1.01.376s
 
 用 Windows UIA 与本机 Screen View 技术预览控制威纶通 / 威纶（WEINVIEW / Weintek）**EasyBuilder X**（EBX）HMI 组态软件，提供画面 JSON 生成、校验、导入、增量补丁与验收工具。
 
@@ -12,6 +12,7 @@
 | --- | --- | --- |
 | **原生整页导入** | 从紧凑 JSON 快速生成 Text/Numeric/Lamp/Button 页面 | 8 控件全流程约 0.5 s；无绑定页编译约 7.1 s，离线导航通过 |
 | **原生增量补丁** | 修改既有控件或增加少量控件，不重建整页 | 新增 3 个对象、19 个原生操作约 0.154 s；支持冲突检查、回读、幂等与失败回滚 |
+| **原生复用与验收** | 克隆既有画面、轻量查询对象、生成 PNG 快照 | 两个 8 控件副本回读哈希一致；全工程 133 对象查询约 0.024 s；快照哈希一致且视觉正常 |
 | **UIA 重建** | 不启用预览时的通用工作桥 | 40/40 元件、17/17 标签、3/3 导航任务、3/3 按钮文字，约 29 min；样式取 EBX 默认值 |
 
 **技术预览不是公开稳定 API。** 不要在其他版本或机器上擅自创建标记；启用开关前必须获得用户明确授权。客户端从 `%APPDATA%/Weintek/EasyBuilder X/ai-sockets/<pid>.json` 发现 loopback 实例并 ping。Socket 协议版本为字符串 `"1.4"`，原生归档 Schema 为 `"1.1"`。
@@ -23,6 +24,8 @@
 - 导入返回 `all_ok=true` 不代表完整成功；转换器还会检查顶层/操作级 `success`、`unresolved_references` 与 `missing_references`。
 - `tags[].address` 不会改写原生绑定。批量改地址应操作变量库/设备标签，或替换 JSON tag 后重新导入；设备 URI 原样回导会报 `index_references_are_missing`。
 - 同名 `importScreenView` 会创建 `名称 (2)` 副本，不会替换既有画面；增量修改使用补丁工具。
+- 画面克隆完整保留源画面的属性、事件和内部引用，但**不会把切屏目标重定向到副本**；需要独立导航时再生成补丁。
+- `queryObjects` 只返回名称、类型和 x/y，适合快速存在性检查，不能替代完整导出、回读或回滚基线。
 - Changeset 批次不是原子事务；失败时前序操作可能已生效。
 - JS Resource 仅证明 `.js` 文件可导入；未找到 JS Object/Action 执行入口，不能把 EBPro JS SDK 能力当成本机 EBX 能力。
 
@@ -32,7 +35,7 @@
 easybuilder-x-mcp/
   SKILL.md                       Agent 主入口：能力边界、配方、坑与验证流程
   README.md                      本文件
-  ebx_mcp_server.py              FastMCP HTTP 服务器，26 个 ebx_* 工具
+  ebx_mcp_server.py              FastMCP HTTP 服务器，29 个 ebx_* 工具
   start-ebx-mcp.bat              一键启动（普通权限，无需 UAC）
   ebx-mcp-smoke-test.py          只读自检
   requirements.txt               uiautomation / fastmcp / pillow
@@ -40,6 +43,7 @@ easybuilder-x-mcp/
     ebx_ai_socket.py             原生预览 Socket 客户端（注册发现 + NDJSON）
     ebx_native_codegen.py        紧凑 JSON → 原生 Screen View，导入并回读验证
     ebx_native_patch.py          既有画面增量补丁：capture/dry-run/apply/回滚
+    ebx_native_reuse.py          画面克隆、轻量对象查询与原生 PNG 快照
     ebx_screen_importer.py       UIA 逐元件重建
     ebx_layout.py                MCP 与导入器共用 Ribbon 坐标
     validate_screen_json.py      画面 JSON 校验
@@ -96,7 +100,7 @@ python ebx-mcp-smoke-test.py 8788
 
 解释器优先级：`PYTHON` 环境变量 → 目录内 `.venv` / `venv` → PATH 里的 `python`。
 
-## 26 个 MCP 工具
+## 29 个 MCP 工具
 
 | 场景 | 工具 |
 | --- | --- |
@@ -110,10 +114,11 @@ python ebx-mcp-smoke-test.py 8788
 | 画面 | `ebx_screen_list` / `ebx_screen_open` / `ebx_screen_elements` |
 | 页面 JSON | `ebx_import_screen_json` / `ebx_import_status` |
 | 原生增量补丁 | `ebx_native_patch_capture` / `ebx_native_patch_apply` |
+| 原生复用 / 验收 | `ebx_native_clone_screen` / `ebx_native_query_objects` / `ebx_native_snapshot` |
 | 编译 / 模拟 | `ebx_compile` / `ebx_offline_simulate` / `ebx_stop_simulation` |
 | 产物核验 | `ebx_artifacts` |
 
-原生预览客户端与转换器仍是独立脚本；MCP 只新增补丁 capture/apply 薄封装，不重复实现协议逻辑，也不自动启用预览。
+原生预览客户端与转换器仍是独立脚本；MCP 提供补丁 capture/apply 与克隆/查询/快照薄封装，不重复实现协议逻辑，也不自动启用预览。Socket 客户端在首次解析后缓存端口；连接失败时清除自动解析的端口，下一次调用才重新发现实例。
 
 ## 原生快速导入样例
 
@@ -148,10 +153,10 @@ python tools\ebx_native_patch.py apply out\监控.patch.json
 cd /d "<本目录>"
 python -m unittest discover -s tools -p "test_ebx_*.py"
 python -m unittest discover -s tools -p "test_validate_screen_json.py"
-python -m py_compile ebx_mcp_server.py tools\ebx_ai_socket.py tools\ebx_native_codegen.py tools\ebx_native_patch.py
+python -m py_compile ebx_mcp_server.py tools\ebx_ai_socket.py tools\ebx_native_codegen.py tools\ebx_native_patch.py tools\ebx_native_reuse.py
 ```
 
-当前完整离线回归共 42 项通过。不要对 `tools/` 使用宽泛 `test_*.py` 发现；生产包只保留纯离线测试。
+当前完整离线回归共 61 项通过。不要对 `tools/` 使用宽泛 `test_*.py` 发现；生产包只保留纯离线测试。
 
 ## 安全与边界
 

@@ -1,6 +1,6 @@
 # EasyBuilder X 既有画面增量补丁
 
-作者：hoverwu ｜ 版本：1.0.0 ｜ 日期：2026-11-25 ｜ 适用：EasyBuilder X V1.01.376s 本机技术预览
+作者：hoverwu ｜ 版本：1.1.0 ｜ 日期：2026-11-25 ｜ 适用：EasyBuilder X V1.01.376s 本机技术预览
 
 本文说明如何修改既有画面的少量控件，而不重建整页。补丁格式为 `ebx-native-patch/1.0`，由 `tools/ebx_native_patch.py` 执行；MCP 工具是同一实现的薄封装。
 
@@ -46,12 +46,16 @@ python tools\ebx_native_patch.py apply out\监控.patch.json --evidence-dir out\
 
 ## 3. MCP 调用
 
-专用 MCP v0.4.0 提供两个工具：
+专用 MCP v0.5.0 提供两个补丁工具和三个复用/验收工具（共 29 个 ebx_* 工具）：
 
 - `ebx_native_patch_capture(screen)`：捕获画面并返回带 `base_hash` 的空操作补丁，不写 EBX。
 - `ebx_native_patch_apply(patch, dry_run=false)`：执行同一套 Schema 预检、冲突检查、写前快照、应用、回读与失败回滚。
 
-推荐顺序：
+- `ebx_native_snapshot(screen)`：生成原生 PNG，复制到项目证据目录并返回 SHA-256；只作视觉验收，不证明绑定或事件正确。
+- `ebx_native_clone_screen(source_screen, new_names, dry_run=false, snapshot=false)`：一次克隆多个副本，严格检查导入、引用与逐画面语义回读。
+- `ebx_native_query_objects(screen/screens/all_screens)`：轻量查询对象名称、类型和 x/y，三选一；不能替代完整导出。
+
+补丁推荐顺序：
 
 1. 调用 capture；
 2. 将 operations 填入返回的 patch；
@@ -150,4 +154,21 @@ MCP 工具不会自动启用预览标记，也不会代替用户授权。
 6. 保存工程，编译并离线模拟；含缺失变量的页面可能导入成功但编译停滞。
 7. 临时验收对象逐项删除，确认画面对象清单和哈希恢复预期。
 
-权威备份仍是 `.ebxprj` / `.ebxobj`；补丁与快照用于自动化、审查和版本管理，不替代工程备份。
+## 9. 既有画面克隆与视觉证据（2026-11-25 新增）
+
+不修改源画面时，可深拷贝原生归档并只改副本名称，一次导入多个副本：
+
+```bat
+cd /d "<项目根>"
+python tools\ebx_native_reuse.py clone --source "源画面" --names "副本1,副本2" --dry-run
+python tools\ebx_native_reuse.py clone --source "源画面" --names "副本1,副本2" --snapshot
+```
+
+工具依次执行冲突检查、批量导入和逐画面 `getViewByScreenName` 回读，比较仅排除画面名称的 canonical SHA-256。只有导入成功、无未解析/缺失引用且所有副本哈希一致才返回成功。
+
+- 克隆保留源画面的内部引用和切屏目标，**不会自动重定向为副本间导航**。
+- 导入不是事务；失败时可能已有部分副本。工具不会自动删除画面，应打开 EBX 人工核对并清理本次新增副本。
+- 快照失败只影响视觉证据，不掩盖结构克隆成功；正式验收应联合语义回读、PNG、编译与模拟。
+- `queryObjects` 只返回名称/类型/x/y，适合快速抽检，不用于补丁基线或绑定/事件验收。
+
+权威备份仍是 `.ebxprj` / `.ebxobj`；补丁、克隆归档与快照用于自动化、审查和版本管理，不替代工程备份。

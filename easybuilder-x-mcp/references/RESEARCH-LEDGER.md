@@ -1,6 +1,6 @@
 # EasyBuilder X 情报台账（已核实事实 + 来源）
 
-作者：hoverwu ｜ 版本：0.6.0 ｜ 建立：2026-11-06 ｜ 更新：2026-11-25 ｜ 采集方式：官方站点直取 + 官方手册 PDF 解析 + 官方安装包实测元数据 + 本机 UIA / 原生 Socket 实测
+作者：hoverwu ｜ 版本：0.7.0 ｜ 建立：2026-11-06 ｜ 更新：2026-11-25 ｜ 采集方式：官方站点直取 + 官方手册 PDF 解析 + 官方安装包实测元数据 + 本机 UIA / 原生 Socket 实测
 
 本文件只记录**已经核实**的事实。任何未实测的推断一律写在末尾并标注"未验证"。
 
@@ -119,8 +119,8 @@ Ribbon 选项卡：**文件 / 常用 / 工程文件 / 元件 / 资料/历史 / I
 
 ### 9.1 专用服务器
 
-- `ebx_mcp_server.py`（FastMCP HTTP，`127.0.0.1:8788`，普通权限），`start-ebx-mcp.bat` 启动，`ebx-mcp-smoke-test.py` 自检；当前 26 个 `ebx_*` 领域工具（v0.4.0；v0.2.0 时为 24 个，初版 18）。
-- 工具清单：status / launch / windows / tree / find / click_name / click_xy / ribbon / ribbon_map / screenshot / keys / save_as / open / new_project / compile / offline_simulate / stop_simulation / artifacts / screen_list / screen_open / screen_elements / uia_dump / import_screen_json / import_status / native_patch_capture / native_patch_apply。
+- `ebx_mcp_server.py`（FastMCP HTTP，`127.0.0.1:8788`，普通权限），`start-ebx-mcp.bat` 启动，`ebx-mcp-smoke-test.py` 自检；当前 29 个 `ebx_*` 领域工具（v0.5.0；v0.4.0 时为 26 个，初版 18）。
+- 工具清单：status / launch / windows / tree / find / click_name / click_xy / ribbon / ribbon_map / screenshot / keys / save_as / open / new_project / compile / offline_simulate / stop_simulation / artifacts / screen_list / screen_open / screen_elements / uia_dump / import_screen_json / import_status / native_patch_capture / native_patch_apply / native_clone_screen / native_query_objects / native_snapshot。
 - 与通用 `uiautomation-mcp`（8786，9 工具）并存，专用版把坐标地图与对话框 ID 固化，减少每次探索。
 
 ### 9.2 工具实测结果
@@ -152,9 +152,9 @@ Ribbon 选项卡：**文件 / 常用 / 工程文件 / 元件 / 资料/历史 / I
 
 ### 9.6 固化产物
 
-- 知识手册：`EASYBUILDERX-UIA-AGENT-GUIDE.md`（当前 v0.3.0，活文档，含更新记录与更新协议）。
-- 方案：`EBX-MCP-CONTROL-PLAN.md`（当前 v1.7.0，含 §11.1 UIA 页面通道与 §12.1 原生增量补丁）。
-- Skill：源稿 `SKILL.md`（与 MCP 同目录，作者 hoverwu，当前 v0.6.0，26 工具 + UIA 树模型 + 补丁配方）；部署副本 `%USERPROFILE%\.qoder-cn\skills\easybuilder-x-mcp\SKILL.md`，用 `tools\sync_skill.py` 同步、`--check` 校验。
+- 知识手册：`EASYBUILDERX-UIA-AGENT-GUIDE.md`（当前 v0.4.0，活文档，含更新记录与更新协议）。
+- 方案：`EBX-MCP-CONTROL-PLAN.md`（当前 v1.8.0，含 §11.1 UIA 页面通道、§12.1 原生增量补丁与 §12.3 原生复用）。
+- Skill：源稿 `SKILL.md`（与 MCP 同目录，作者 hoverwu，当前 v0.7.0，29 工具 + UIA 树模型 + 补丁/复用配方）；部署副本 `%USERPROFILE%\.qoder-cn\skills\easybuilder-x-mcp\SKILL.md`，用 `tools\sync_skill.py` 同步、`--check` 校验。
 - 更新协议：新知识 → 手册对应小节 + 更新记录 → 必要时加 MCP 工具并自检 → 同步 Skill / 方案 / 本台账；未实测只进"未验证边界"。
 
 ## 10. 按钮导航 / 切换画面 / 启动页（2026-11-07 实测）
@@ -258,11 +258,29 @@ Ribbon 选项卡：**文件 / 常用 / 工程文件 / 元件 / 资料/历史 / I
 | 新增 Text/Numeric/Button，含字符串引用、Project 变量与切屏事件，展开 19 个原生操作约 0.154 s；回读全部 satisfied | `native_patch_live_add.json` |
 | 同一补丁重复执行返回 noop；Text/Numeric/Button 分别删除约 0.068/0.0592/0.035 s，清理后哈希恢复原值 | `native_patch_live_remove_*.json` |
 | 既有 Numeric 六项几何恢复约 0.0497 s，回读全部 satisfied | `native_patch_live_restore.json` |
-| MCP 升 v0.4.0，新增 `ebx_native_patch_capture` / `ebx_native_patch_apply` 两个薄封装，共 26 工具；不自动启用预览 | `ebx_mcp_server.py`；4 项 MCP 封装测试 |
-| 完整离线回归 42 项通过：Socket 3、codegen 11、patch 18、MCP patch 4、MCP open 2、validator 4 | unittest 实测输出 |
+| MCP v0.5.0 增加克隆/查询/快照三个薄封装，共 29 工具；不自动启用预览 | `ebx_mcp_server.py`；MCP 封装测试 |
+| 完整离线回归 61 项通过：Socket 5、codegen 11、patch 18、MCP native 9、reuse 11、MCP open 3、validator 4 | unittest 实测输出 |
 | 字符串表官方支持 CSV/XLS/XLSX；表头、编码、重复 ID 行为未记载 | V1.01 手册 §8.2.3；W5 官方批量报告 |
 | 设备标签导入受驱动条件限制，不是通用变量 CSV 承诺；智慧批次可套用共用属性/事件/方法，直接改地址未证实 | 官方手册/产品页；W5 报告 |
 | 自定义模板只证实工程内复用和同步，未找到独立导出或跨工程部署格式；`ebxtool.exe` 仅版本与审计校验 | 官方手册；W5 报告 |
+
+### 13.3 原生画面复用、轻量查询与快照（2026-11-25）
+
+| 事实 | 证据 |
+| --- | --- |
+| 原生归档可深拷贝源画面，仅改 `name` 后把一个或多个副本一次导入；windows、对象、事件和引用保持原样 | `tools/ebx_native_reuse.py`；真实双副本导入 |
+| 克隆逐画面 `getViewByScreenName` 回读，比较仅排除 `name` 的 canonical SHA-256；对象、事件、绑定或几何变化均失败 | 两个副本 8 对象，哈希均等于源 `d7eeef7f…` |
+| 两个 8 控件副本约 1.53 s，严格导入检查通过且无未解析/缺失引用 | `out/ai_socket/native_clone_*_evidence.json` |
+| 克隆不自动重定向切屏目标；源画面内部导航被完整保留 | 归档仅改 name；导航重定向未实现 |
+| `queryObjects` 只返回名称/类型/x/y；全工程 133 对象约 0.024 s | `out/ai_socket/` 查询证据；原生 Schema |
+| `getSnapshot` 生成 PNG；工具复制到项目快照目录并记录 SHA-256，两张副本截图哈希一致且首张视觉正常 | `out/ai_socket/snapshots/Z_P7_CloneA/B_*.png` |
+| 导入/回读失败时可能已有部分副本；工具保留证据但不自动删除，需 EBX 人工清理 | 失败语义与离线回归测试 |
+| Socket 自动发现端口后缓存；连接失败清除自动端口，下次调用重新发现，显式端口不改变语义 | `tools/ebx_ai_socket.py`；两项 Socket 回归测试 |
+| MCP v0.5.0 增加 clone/query/snapshot 三个工具，共 29 工具 | `ebx_mcp_server.py`；9 项 MCP native 测试 |
+| 删除两个临时副本并保存后源哈希不变、克隆不存在 | `tools/del_screen.py`；清理后回读 |
+| 欢迎页无 Ribbon 文件后台；`ebx_open` 检测无工程时改点工具栏「打开」(54,27)，真实打开保存工程成功 | `ebx_mcp_server.py`；欢迎页打开回归测试 |
+
+**W6 官方批量核验（只读研究，未操作 EBX）**：字符串表官方支持 CSV/XLS/XLSX，但表头、编码、重复 ID 等未记载，可靠 AI 生成格式尚未建立；保守路线是先在 EBX 导出目标表，保留表头/编码由 AI 编辑，再在工程副本小样本回导核验，此 round-trip 尚未实测。智慧批次可套用共用属性/事件/方法，直接批量改地址未证实。自定义模板只证实工程内复用与同步，未找到独立导出/跨工程部署格式。来源：`https://www.weinview.cn/storage/file/20260916/1789531034133350.pdf`、`https://www.weinview.cn/EasyBuilderX`、`https://www.weinview.cn/cpdt/3654.html`、`https://www.weintek.com/Software/EasyBuilder/EasyBuilderX`、`https://www.weinview.cn/rj`。
 
 **仍未验证**：字符串表最小 round-trip、异构元件地址批量修改、受支持驱动的标签导入矩阵、跨工程模板保真度、复杂控件与群组增量补丁。
 
